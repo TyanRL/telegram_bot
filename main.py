@@ -32,6 +32,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {ALLOWED_USER_IDS}, {ALLOWED_USER_NAMES}")
+
         return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
@@ -62,6 +64,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {ALLOWED_USER_IDS}, {ALLOWED_USER_NAMES}")
         return
     user_message = update.message.text
     bot_reply = await get_bot_reply(user_message)
