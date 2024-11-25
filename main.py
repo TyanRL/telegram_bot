@@ -20,6 +20,8 @@ logging.basicConfig(level=logging.INFO)
 openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
+model_name="chatgpt-4o-latest"
+
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
@@ -33,14 +35,14 @@ async def get_bot_reply(user_message):
             None,
             partial(
                 openai_client.chat.completions.create,
-                model="chatgpt-4o-latest",
+                model=model_name,
                 messages=[
                     {"role": "user", "content": user_message}
                 ],
                 max_tokens=12000,
             )
         )
-        bot_reply = response['choices'][0]['message']['content'].strip()
+        bot_reply = response.choices[0].message.content.strip()
         return bot_reply
     except Exception as e:
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
@@ -87,7 +89,7 @@ async def main():
     await set_webhook(application)
 
     # Запуск бота
-    logging.info("Bot is running...")
+    logging.info(f"Bot is running. Model - {model_name}")
     try:
         await asyncio.Event().wait()
     finally:
