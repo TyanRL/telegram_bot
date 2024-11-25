@@ -39,7 +39,7 @@ def get_users_allowed_from_os():
     allowed_user_names  = [
         name.strip() for name in allowed_user_names_str.split(',') if len(name) > 0
      ]
-    logging.info(f"Users uploaded from environment. Ids - {model_name} \n Names - {allowed_user_names}")
+    logging.info(f"Users uploaded from environment. Ids - {allowed_user_ids} \n Names - {allowed_user_names}")
 
 
 
