@@ -25,14 +25,18 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-ALLOWED_USERS = ['@motoalibi_me', '79996457791', '@Ne_PlusheviyMishka']
+ALLOWED_USER_IDS = ['225026726', '261214835', '771716523']
+ALLOWED_USER_NAMES = []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if user.username not in ALLOWED_USERS:
+    if check_user_access(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
+
+def check_user_access(user):
+    return user.id not in ALLOWED_USER_IDS and user.username not in ALLOWED_USER_NAMES
 
 async def get_bot_reply(user_message):
     loop = asyncio.get_event_loop()
@@ -56,7 +60,7 @@ async def get_bot_reply(user_message):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if user.username not in ALLOWED_USERS:
+    if  check_user_access(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         return
     user_message = update.message.text
