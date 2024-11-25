@@ -36,7 +36,7 @@ system_message = {
     "content": "Вы — помощник, который отвечает на вопросы пользователей."
 }
 
-version="1.2"
+version="1.3"
 
 def get_users_allowed_from_os():
     global allowed_user_ids, allowed_user_names
@@ -90,9 +90,7 @@ async def get_bot_reply(user_id, user_message):
             partial(
                 openai_client.chat.completions.create,
                 model=model_name,
-                messages=[
-                    {"role": "user", "content": user_message}
-                ],
+                messages=history,
                 max_tokens=12000,
             )
         )
