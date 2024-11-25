@@ -36,7 +36,7 @@ system_message = {
     "content": "Вы — помощник, который отвечает на вопросы пользователей."
 }
 
-version="1.0"
+version="1.1"
 
 def get_users_allowed_from_os():
     global allowed_user_ids, allowed_user_names
