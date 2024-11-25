@@ -1,6 +1,7 @@
+import asyncio
 import os
 import openai
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Инициализация OpenAI и Telegram API
@@ -21,7 +22,11 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(bot_reply)
 
 def main():
-    updater = Updater(telegram_token)
+    bot = Bot(token=telegram_token)
+    update_queue = asyncio.Queue()
+
+
+    updater = Updater(bot=bot, update_queue=update_queue)
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("start", start))
