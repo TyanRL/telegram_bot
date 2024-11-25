@@ -36,4 +36,13 @@ async def main():
 
 if __name__ == '__main__':
     import asyncio
-    asyncio.run(main())
+
+    # Проверяем, запущен ли цикл событий
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # Если нет запущенного цикла, создаем новый
+        asyncio.run(main())
+    else:
+        # Если цикл уже запущен, запускаем задачу в существующем цикле
+        asyncio.ensure_future(main())
