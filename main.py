@@ -30,13 +30,13 @@ ALLOWED_USER_NAMES = []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if check_user_access(user):
+    if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
-def check_user_access(user):
-    return user.id not in ALLOWED_USER_IDS and user.username not in ALLOWED_USER_NAMES
+def in_white_list(user):
+    return user.id in ALLOWED_USER_IDS or user.username in ALLOWED_USER_NAMES
 
 async def get_bot_reply(user_message):
     loop = asyncio.get_event_loop()
@@ -60,7 +60,7 @@ async def get_bot_reply(user_message):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if  check_user_access(user):
+    if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         return
     user_message = update.message.text
