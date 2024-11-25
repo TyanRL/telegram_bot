@@ -45,9 +45,14 @@ async def set_webhook(application):
 
 async def main():
     # Initialize the Application
+    print("Starting Telegram bot...")
+
+    # Initialize the ApplicationBuilder and set the token
+    print("Initializing ApplicationBuilder...")
     application = ApplicationBuilder().token(telegram_token).build()
 
     # Add handlers
+    print("Adding handlers...")
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -65,10 +70,12 @@ async def main():
         return web.Response(text="OK")
 
     # Create an aiohttp web app
+    print("Creating aiohttp web app...")
     app = web.Application()
     app.router.add_post('/', webhook_handler)
 
     # Start the webhook
+    print("Starting webhook...")
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', '8443')))
