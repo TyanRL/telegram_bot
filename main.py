@@ -31,7 +31,7 @@ allowed_user_names = []
 
 def get_users_allowed_from_os():
     global allowed_user_ids, allowed_user_names
-    allowed_users_str = os.getenv('ALLOWED_USERS', '')
+    allowed_users_str = os.getenv('ALLOWED_USER_IDS', '')
     allowed_user_ids = [
         int(uid.strip()) for uid in allowed_users_str.split(',') if uid.strip().isdigit()
     ]
