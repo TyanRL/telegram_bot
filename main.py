@@ -51,6 +51,10 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Initialize and start the application
+    await application.initialize()
+    await application.start()
+
     # Set up the webhook route
     async def webhook_handler(request):
         # Extract the JSON payload from the request
@@ -75,7 +79,12 @@ async def main():
 
     # Run the bot until Ctrl+C is pressed
     print("Bot is running...")
-    await asyncio.Event().wait()
+    try:
+        await asyncio.Event().wait()
+    finally:
+        # Stop and shutdown the application gracefully
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == '__main__':
     asyncio.run(main())
