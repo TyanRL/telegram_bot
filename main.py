@@ -1,7 +1,7 @@
 import asyncio
 import os
-import openai
 import logging
+from functools import partial
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,12 +11,13 @@ from telegram.ext import (
     filters,
 )
 from aiohttp import web
+from openai import OpenAI
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
 # Инициализация OpenAI и Telegram API
-openai.api_key = os.getenv('OPENAI_API_KEY')
+openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
 # URL вебхука
@@ -25,23 +26,29 @@ WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
+async def get_bot_reply(user_message):
+    loop = asyncio.get_event_loop()
+    try:
+        response = await loop.run_in_executor(
+            None,
+            partial(
+                openai_client.chat.completions.create,
+                model="gpt-4o-latest",
+                messages=[
+                    {"role": "user", "content": user_message}
+                ],
+                max_tokens=12000,
+            )
+        )
+        bot_reply = response['choices'][0]['message']['content'].strip()
+        return bot_reply
+    except Exception as e:
+        logging.error(f"Ошибка при обращении к OpenAI API: {e}")
+        return "Извините, произошла ошибка при обработке вашего запроса."
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_message = update.message.text
-
-    try:
-        # Асинхронный вызов OpenAI API
-        response = await openai.ChatCompletion.acreate(
-            model="chatgpt-4o-latest",
-            messages=[
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=12000,
-        )
-        bot_reply = response.choices[0].message.content.strip()
-    except Exception as e:
-        bot_reply = "Извините, произошла ошибка при обработке вашего запроса."
-        # Логирование исключения
-        logging.error(f"Ошибка при обработке сообщения: {e}")
+    bot_reply = await get_bot_reply(user_message)
     await update.message.reply_text(bot_reply)
 
 async def set_webhook(application):
