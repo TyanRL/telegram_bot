@@ -1,6 +1,7 @@
 import asyncio
 import os
 import openai
+import logging
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,12 +12,15 @@ from telegram.ext import (
 )
 from aiohttp import web
 
-# Initialize OpenAI and Telegram API
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
+# Инициализация OpenAI и Telegram API
 openai.api_key = os.getenv('OPENAI_API_KEY')
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
-# Get the webhook URL from an environment variable
-WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"  # Set this in Render
+# URL вебхука
+WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
@@ -25,7 +29,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_message = update.message.text
 
     try:
-        # Use OpenAI's ChatCompletion API asynchronously
+        # Асинхронный вызов OpenAI API
         response = await openai.ChatCompletion.acreate(
             model="chatgpt-4o-latest",
             messages=[
@@ -36,62 +40,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         bot_reply = response.choices[0].message.content.strip()
     except Exception as e:
         bot_reply = "Извините, произошла ошибка при обработке вашего запроса."
-        # Optionally log the exception
-        print(f"Error: {e}")
+        # Логирование исключения
+        logging.error(f"Ошибка при обработке сообщения: {e}")
     await update.message.reply_text(bot_reply)
 
 async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
 
 async def main():
-    # Initialize the Application
-    print("Starting Telegram bot...")
-
-    # Initialize the ApplicationBuilder and set the token
-    print("Initializing ApplicationBuilder...")
+    # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 
-    # Add handlers
-    print("Adding handlers...")
+    # Добавление обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Initialize and start the application
+    # Инициализация и запуск приложения
     await application.initialize()
     await application.start()
 
-    # Set up the webhook route
+    # Настройка маршрута вебхука
     async def webhook_handler(request):
-        # Extract the JSON payload from the request
         update = await request.json()
-        # Process the update using the application
         update = Update.de_json(update, application.bot)
         await application.process_update(update)
         return web.Response(text="OK")
 
-    # Create an aiohttp web app
-    print("Creating aiohttp web app...")
+    # Создание веб-приложения aiohttp
     app = web.Application()
     app.router.add_post('/', webhook_handler)
 
-    # Start the webhook
-    print("Starting webhook...")
+    # Запуск вебхука
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', '8443')))
     await site.start()
 
-    # Set the webhook with Telegram
+    # Установка вебхука в Telegram
     await set_webhook(application)
 
-    # Run the bot until Ctrl+C is pressed
-    print("Bot is running...")
+    # Запуск бота
+    logging.info("Bot is running...")
     try:
         await asyncio.Event().wait()
     finally:
-        # Stop and shutdown the application gracefully
+        # Корректная остановка приложения
         await application.stop()
         await application.shutdown()
+        logging.info("Bot has stopped.")
 
 if __name__ == '__main__':
     asyncio.run(main())
