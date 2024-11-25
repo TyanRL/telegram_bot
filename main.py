@@ -23,7 +23,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
 async def main():
     # Initialize the Application
-    application = ApplicationBuilder().token(telegram_token).build()
+    application = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
@@ -33,5 +33,12 @@ async def main():
     await application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    try:
+        # Use the running loop if available
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If no loop is running, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    loop.run_until_complete(main())
