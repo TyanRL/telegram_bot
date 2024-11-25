@@ -2,7 +2,7 @@ import asyncio
 import os
 import openai
 from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Инициализация OpenAI и Telegram API
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -21,20 +21,17 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     bot_reply = response.choices[0].text.strip()
     update.message.reply_text(bot_reply)
 
-def main():
-    bot = Bot(token=telegram_token)
-    update_queue = asyncio.Queue()
+async def main():
+    # Initialize the Application
+    application = ApplicationBuilder().token(telegram_token).build()
 
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    updater = Updater(bot=bot, update_queue=update_queue)
-    dispatcher = updater.dispatcher
-
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-
-    updater.start_polling()
-    updater.idle()
+    # Run the bot
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
