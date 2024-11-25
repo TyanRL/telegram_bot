@@ -36,7 +36,7 @@ system_message = {
     "content": "Вы — помощник, который отвечает на вопросы пользователей."
 }
 
-version="1.1"
+version="1.2"
 
 def get_users_allowed_from_os():
     global allowed_user_ids, allowed_user_names
@@ -83,11 +83,18 @@ async def get_bot_reply(user_id, user_message):
         history = history[-max_history_length:]
     
     try:
+        loop = asyncio.get_event_loop()
         # Вызываем OpenAI API с историей сообщений
-        response = await openai_client.chat.completions.create(
-            model=model_name,
-            messages=history,
-            max_tokens=12000,
+        response = await loop.run_in_executor(
+            None,
+            partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=[
+                    {"role": "user", "content": user_message}
+                ],
+                max_tokens=12000,
+            )
         )
         bot_reply = response.choices[0].message.content.strip()
         
