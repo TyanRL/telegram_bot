@@ -33,7 +33,7 @@ async def get_bot_reply(user_message):
             None,
             partial(
                 openai_client.chat.completions.create,
-                model="gpt-4o-latest",
+                model="chatgpt-4o-latest",
                 messages=[
                     {"role": "user", "content": user_message}
                 ],
