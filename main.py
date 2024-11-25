@@ -103,6 +103,7 @@ async def get_bot_reply(user_id, user_message):
         return "Извините, произошла ошибка при обработке вашего запроса."
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    get_users_allowed_from_os()
     user = update.effective_user
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
