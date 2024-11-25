@@ -25,20 +25,37 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-ALLOWED_USER_IDS = [225026726, 261214835, 771716523]
-ALLOWED_USER_NAMES = []
+alowed_user_ids = []
+allowed_user_names = []
+
+
+def get_users_allowed_from_os():
+    global allowed_user_ids, allowed_user_names
+    allowed_users_str = os.getenv('ALLOWED_USERS', '')
+    allowed_user_ids = [
+        int(uid.strip()) for uid in allowed_users_str.split(',') if uid.strip().isdigit()
+    ]
+    allowed_user_names_str = os.getenv('ALLOWED_USER_NAMES', '')
+    allowed_user_names  = [
+        name.strip() for name in allowed_user_names_str.split(',') if len(name) > 0
+     ]
+    logging.info(f"Users uploaded from environment. Ids - {model_name} \n Names - {allowed_user_names}")
+
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    get_users_allowed_from_os()
+
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {ALLOWED_USER_IDS}, {ALLOWED_USER_NAMES}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {alowed_user_ids}, {allowed_user_names}")
 
         return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
 def in_white_list(user):
-    return user.id in ALLOWED_USER_IDS or user.username in ALLOWED_USER_NAMES
+    return user.id in alowed_user_ids or user.username in allowed_user_names
 
 async def get_bot_reply(user_message):
     loop = asyncio.get_event_loop()
@@ -64,7 +81,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {ALLOWED_USER_IDS}, {ALLOWED_USER_NAMES}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {alowed_user_ids}, {allowed_user_names}")
         return
     user_message = update.message.text
     bot_reply = await get_bot_reply(user_message)
@@ -74,6 +91,8 @@ async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
 
 async def main():
+    # Получение списка пользователей из переменной окружения
+    get_users_allowed_from_os() 
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 
