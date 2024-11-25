@@ -25,7 +25,7 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-alowed_user_ids = []
+allowed_user_ids = []
 allowed_user_names = []
 
 
@@ -49,13 +49,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {alowed_user_ids}, {allowed_user_names}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {allowed_user_ids}, {allowed_user_names}")
 
         return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
 def in_white_list(user):
-    return user.id in alowed_user_ids or user.username in allowed_user_names
+    return user.id in allowed_user_ids or user.username in allowed_user_names
 
 async def get_bot_reply(user_message):
     loop = asyncio.get_event_loop()
@@ -81,7 +81,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     if not in_white_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {alowed_user_ids}, {allowed_user_names}")
+        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {allowed_user_ids}, {allowed_user_names}")
         return
     user_message = update.message.text
     bot_reply = await get_bot_reply(user_message)
