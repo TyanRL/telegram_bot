@@ -25,7 +25,13 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
+ALLOWED_USERS = ['@motoalibi_me', '79996457791', '@Ne_PlusheviyMishka']
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if user.username not in ALLOWED_USERS:
+        await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
+        return
     await update.message.reply_text('Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
 
 async def get_bot_reply(user_message):
@@ -49,6 +55,10 @@ async def get_bot_reply(user_message):
         return "Извините, произошла ошибка при обработке вашего запроса."
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if user.username not in ALLOWED_USERS:
+        await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
+        return
     user_message = update.message.text
     bot_reply = await get_bot_reply(user_message)
     await update.message.reply_text(bot_reply)
