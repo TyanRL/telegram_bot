@@ -25,24 +25,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"Произошла ошибка: {str(e)}")
 
 async def main():
-    # Инициализация бота
+    # Инициализация приложения Telegram
     application = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
-    # Обработчик текстовых сообщений
+    # Добавляем обработчик текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запуск бота
+    # Запуск polling
     await application.run_polling()
 
 if __name__ == '__main__':
     import asyncio
 
-    # Создание нового цикла событий в окружении Render
     try:
-        loop = asyncio.new_event_loop()  # Создаем новый событийный цикл
-        asyncio.set_event_loop(loop)    # Устанавливаем его как текущий
-        loop.run_until_complete(main())  # Запускаем бота
-    except Exception as e:
-        print(f"Ошибка при запуске: {str(e)}")
+        # Получаем текущий цикл событий
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # Если цикла нет, создаем новый
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        # Запускаем main внутри активного цикла
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("Бот остановлен пользователем")
     finally:
-        loop.close()  # Закрываем цикл в случае завершения
+        if not loop.is_closed():
+            loop.close()
