@@ -25,7 +25,7 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-ALLOWED_USER_IDS = ['225026726', '261214835', '771716523']
+ALLOWED_USER_IDS = [225026726, 261214835, 771716523]
 ALLOWED_USER_NAMES = []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
