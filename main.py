@@ -37,12 +37,12 @@ async def main():
 if __name__ == '__main__':
     import asyncio
 
-    # Проверяем, запущен ли цикл событий
+    # Создание нового цикла событий в окружении Render
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # Если нет запущенного цикла, создаем новый
-        asyncio.run(main())
-    else:
-        # Если цикл уже запущен, запускаем задачу в существующем цикле
-        asyncio.ensure_future(main())
+        loop = asyncio.new_event_loop()  # Создаем новый событийный цикл
+        asyncio.set_event_loop(loop)    # Устанавливаем его как текущий
+        loop.run_until_complete(main())  # Запускаем бота
+    except Exception as e:
+        print(f"Ошибка при запуске: {str(e)}")
+    finally:
+        loop.close()  # Закрываем цикл в случае завершения
