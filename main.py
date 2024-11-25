@@ -28,6 +28,15 @@ WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 allowed_user_ids = []
 allowed_user_names = []
 
+user_histories = {}
+max_history_length = 50  # Максимальное количество сообщений в истории
+
+system_message = {
+    "role": "system",
+    "content": "Вы — помощник, который отвечает на вопросы пользователей."
+}
+
+version="1.0"
 
 def get_users_allowed_from_os():
     global allowed_user_ids, allowed_user_names
@@ -41,7 +50,11 @@ def get_users_allowed_from_os():
      ]
     logging.info(f"Users uploaded from environment. Ids - {allowed_user_ids} \n Names - {allowed_user_names}")
 
-
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    user_histories[user.id] = []
+    await update.message.reply_text("Контекст беседы был сброшен. Начинаем новую беседу.")
+    logging.info(f"Context for user {user.id} is reset")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -57,21 +70,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 def in_white_list(user):
     return user.id in allowed_user_ids or user.username in allowed_user_names
 
-async def get_bot_reply(user_message):
-    loop = asyncio.get_event_loop()
+async def get_bot_reply(user_id, user_message):
+    # Получаем или создаем историю сообщений для пользователя
+    history = user_histories.get(user_id, [])
+    history = [system_message] + history
+    # Добавляем новое сообщение пользователя в историю
+    history.append({"role": "user", "content": user_message})
+    
+    # Ограничиваем историю, чтобы не превышать лимиты по токенам
+    
+    if len(history) > max_history_length:
+        history = history[-max_history_length:]
+    
     try:
-        response = await loop.run_in_executor(
-            None,
-            partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=[
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=12000,
-            )
+        # Вызываем OpenAI API с историей сообщений
+        response = await openai_client.chat.completions.create(
+            model=model_name,
+            messages=history,
+            max_tokens=12000,
         )
         bot_reply = response.choices[0].message.content.strip()
+        
+        # Добавляем ответ бота в историю
+        history.append({"role": "assistant", "content": bot_reply})
+        
+        # Обновляем историю пользователя
+        user_histories[user_id] = history
+        
         return bot_reply
     except Exception as e:
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
@@ -84,7 +109,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logging.error(f"Нет доступа: {user}. Допустимые пользователи: {allowed_user_ids}, {allowed_user_names}")
         return
     user_message = update.message.text
-    bot_reply = await get_bot_reply(user_message)
+    bot_reply = await get_bot_reply(user.id, user_message)
     await update.message.reply_text(bot_reply)
 
 async def set_webhook(application):
@@ -99,6 +124,7 @@ async def main():
     # Добавление обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("reset", reset))
 
     # Инициализация и запуск приложения
     await application.initialize()
@@ -125,7 +151,7 @@ async def main():
     await set_webhook(application)
 
     # Запуск бота
-    logging.info(f"Bot is running. Model - {model_name}")
+    logging.info(f"Bot v{version} is running. Model - {model_name}")
     try:
         await asyncio.Event().wait()
     finally:
