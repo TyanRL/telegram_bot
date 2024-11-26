@@ -233,9 +233,12 @@ async def in_user_list(user):
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
     history = await user_histories.get(user_id)
-    #history = [system_message] + history
+    
     # Добавляем новое сообщение пользователя в историю
-    history.append({"role": "user", "content": user_message})
+    if history is None:
+        history = [{"role": "user", "content": user_message}]
+    else:
+        history.append({"role": "user", "content": user_message})
     
     # Ограничиваем историю, чтобы не превышать лимиты по токенам
     
@@ -250,7 +253,7 @@ async def get_bot_reply(user_id, user_message):
             partial(
                 openai_client.chat.completions.create,
                 model=model_name,
-                messages=history,
+                messages=[system_message] + history,
                 max_tokens=12000,
             )
         )
