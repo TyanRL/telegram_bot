@@ -136,6 +136,13 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global user_ids
     user = update.effective_user
     if in_admin_list(user):
+        if len(context.args) == 0:
+            await update.message.reply_text("Вы не указали идентификатор пользователя.")
+            return
+        elif not context.args[0].isdigit():
+            await update.message.reply_text("Идентификатор должен быть числом.")
+            return
+
         new_user_id = int(context.args[0])
         if new_user_id not in user_ids:
             save_user_id(new_user_id)
@@ -150,6 +157,13 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     global user_ids
     user = update.effective_user
     if in_admin_list(user):
+        if len(context.args) == 0:
+            await update.message.reply_text("Вы не указали идентификатор пользователя.")
+            return
+        elif not context.args[0].isdigit():
+            await update.message.reply_text("Идентификатор должен быть числом.")
+            return
+        
         new_user_id = int(context.args[0])
         if new_user_id in user_ids:
             user_ids.remove(new_user_id)
