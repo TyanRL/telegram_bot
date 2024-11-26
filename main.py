@@ -233,6 +233,7 @@ async def main():
     get_admins_from_os() 
     # Получение списка пользователей из переменной окружения
     connect_to_db()
+    create_table()
     user_ids=get_user_ids() 
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
