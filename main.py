@@ -246,6 +246,7 @@ async def get_bot_reply(user_id, user_message):
         history = history[-max_history_length:]
     
     try:
+        logging.info([system_message] + history)
         loop = asyncio.get_event_loop()
         # Вызываем OpenAI API с историей сообщений
         response = await loop.run_in_executor(
