@@ -73,10 +73,16 @@ class SafeList:
     async def get(self, index):
         async with self.lock:
             return self.data[index]
+        
+    async def remove(self, value):
+        async with self.lock:
+            if value in self.data:
+                self.data.remove(value)
     
     async def get_all(self):
         async with self.lock:
             return list(self.data)
+
 # пользователи
 user_ids= SafeList([])
 user_histories = SafeDict()
@@ -87,53 +93,80 @@ if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
     raise EnvironmentError("Не установлены все необходимые переменные окружения для подключения к MySQL.")
 
 def connect_to_db():
-    """Подключается к базе данных MySQL."""
     try:
-        connection = mysql.connector.connect(
+        return mysql.connector.connect(
             host=MYSQL_HOST,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
             database=MYSQL_DB,
             port=MYSQL_PORT
         )
-        return connection
     except mysql.connector.Error as err:
         logging.error(f"Ошибка подключения к MySQL: {err}")
         raise
 
 def create_table():
     """Создает таблицу для хранения идентификаторов пользователей."""
-    with connect_to_db() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_ids (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    user_id BIGINT NOT NULL
-                )
-            """)
-            connection.commit()
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_ids (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id BIGINT NOT NULL
+            )
+        """)
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка создания таблицы в MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 def save_user_id(user_id):
     """Сохраняет идентификатор пользователя в базу данных."""
-    with connect_to_db() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("INSERT INTO user_ids (user_id) VALUES (%s)", (user_id,))
-            connection.commit()
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("INSERT INTO user_ids (user_id) VALUES (%s)", (user_id,))
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка сохранения пользователя в MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 def get_user_ids():
     """Получает все идентификаторы пользователей из базы данных."""
-    with connect_to_db() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT DISTINCT user_id FROM user_ids")
-            result = cursor.fetchall()
-    return [row[0] for row in result]
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT DISTINCT user_id FROM user_ids")
+        result = cursor.fetchall()
+        return [row[0] for row in result]
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка получения пользователей из MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 def remove_user_id(user_id):
     """Удаляет идентификатор пользователя из базы данных."""
-    with connect_to_db() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM user_ids WHERE user_id = %s", (user_id,))
-            connection.commit()
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM user_ids WHERE user_id = %s", (user_id,))
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка удаления пользователя из MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
 #-------------------------------------end MySQL-------------------------------------------------------
 
 
@@ -195,7 +228,6 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if len(context.args) == 0:
             await update.message.reply_text("Вы не указали идентификатор пользователя. Команда должна выглядеть так: /remove <идентификатор пользователя>")
 
-
             return
         elif not context.args[0].isdigit():
             await update.message.reply_text("Идентификатор должен быть числом.")
@@ -232,13 +264,10 @@ async def in_user_list(user):
 
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
-    history = await user_histories.get(user_id)
+    history = await user_histories.get(user_id) or []
     
     # Добавляем новое сообщение пользователя в историю
-    if history is None:
-        history = [{"role": "user", "content": user_message}]
-    else:
-        history.append({"role": "user", "content": user_message})
+    history.append({"role": "user", "content": user_message})
     
     # Ограничиваем историю, чтобы не превышать лимиты по токенам
     
