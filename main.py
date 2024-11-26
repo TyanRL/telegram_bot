@@ -16,6 +16,9 @@ from telegram.ext import (
 )
 from aiohttp import web
 from openai import OpenAI
+import openai as opai
+
+
 
 
 version="1.5"
@@ -31,7 +34,9 @@ MYSQL_PORT = os.getenv('MYSQL_ADDON_PORT', '3306')
 logging.basicConfig(level=logging.INFO)
 
 # Инициализация OpenAI и Telegram API
-openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+opena_ai_api_key=os.getenv('OPENAI_API_KEY')
+openai_client = OpenAI(api_key=opena_ai_api_key)
+opai.api_key = opena_ai_api_key
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
 model_name="chatgpt-4o-latest"
@@ -344,7 +349,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             # Распознавание речи с использованием OpenAI
             with open(temp_file.name, "rb") as audio_file:
-                transcript = openai_client.Audio.transcribe("whisper-1", audio_file)
+                transcript = opai.Audio.transcribe("whisper-1", audio_file)
 
             # Получение распознанного текста
             recognized_text = transcript.get("text", "Не удалось распознать текст.")
