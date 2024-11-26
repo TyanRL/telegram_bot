@@ -345,15 +345,11 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logging.info(f"Временный файл загружен: {temp_file.name}")
 
         try:
-            recognized_text = ""
             # Распознавание речи с использованием OpenAI
             transcription = openai_client.audio.transcriptions.create(
                             model='whisper-1',
                             file=open(temp_file.name, 'rb')
                             )
-            if transcription.get("status") != "completed":
-                await update.message.reply_text("Произошла ошибка при распознавании вашего сообщения.")
-                return
             recognized_text=transcription.text
             
             if recognized_text=="":
