@@ -351,7 +351,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                             model='whisper-1',
                             file=open(temp_file.name, 'rb')
                             )
-            if transcription.status!= "completed":
+            if transcription.get("status") != "completed":
                 await update.message.reply_text("Произошла ошибка при распознавании вашего сообщения.")
                 return
             recognized_text=transcription.text
