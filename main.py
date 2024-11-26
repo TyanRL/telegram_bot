@@ -16,8 +16,6 @@ from telegram.ext import (
 )
 from aiohttp import web
 from openai import OpenAI
-import openai as opai
-
 
 
 
@@ -36,7 +34,7 @@ logging.basicConfig(level=logging.INFO)
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=opena_ai_api_key)
-opai.api_key = opena_ai_api_key
+
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
 model_name="chatgpt-4o-latest"
@@ -347,12 +345,16 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logging.info(f"Временный файл загружен: {temp_file.name}")
 
         try:
+            recognized_text = ""
             # Распознавание речи с использованием OpenAI
             with open(temp_file.name, "rb") as audio_file:
-                transcript = opai.Audio.transcribe("whisper-1", audio_file)
-
-            # Получение распознанного текста
-            recognized_text = transcript.get("text", "Не удалось распознать текст.")
+                transcript = openai_client.audio.transcriptions.create("whisper-1", audio_file)
+                recognized_text=transcript.text
+            
+            if recognized_text=="":
+                 await update.message.reply_text("Произошла ошибка при распознавании вашего сообщения.")
+                 return
+            
             await handle_message_inner(update, user, recognized_text) 
             logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
         except Exception as e:
