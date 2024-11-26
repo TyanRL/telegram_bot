@@ -284,7 +284,7 @@ async def get_bot_reply(user_id, user_message):
                 openai_client.chat.completions.create,
                 model=model_name,
                 messages=[system_message] + history,
-                max_tokens=32000,
+                max_tokens=16384,
             )
         )
         bot_reply = response.choices[0].message.content.strip()
