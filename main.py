@@ -73,7 +73,7 @@ def in_white_list(user):
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
     history = user_histories.get(user_id, [])
-    history = [system_message] + history
+    #history = [system_message] + history
     # Добавляем новое сообщение пользователя в историю
     history.append({"role": "user", "content": user_message})
     
