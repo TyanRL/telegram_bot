@@ -355,7 +355,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             if recognized_text=="":
                  await update.message.reply_text("Произошла ошибка при распознавании вашего сообщения.")
                  return
-            await update.message.reply_text(f"Распознаный текст: \n {recognized_text}")
+            await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
             await handle_message_inner(update, user, recognized_text) 
             logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
         except Exception as e:
