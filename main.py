@@ -284,7 +284,7 @@ async def get_bot_reply(user_id, user_message):
                 openai_client.chat.completions.create,
                 model=model_name,
                 messages=[system_message] + history,
-                max_tokens=12000,
+                max_tokens=32000,
             )
         )
         bot_reply = response.choices[0].message.content.strip()
@@ -300,6 +300,14 @@ async def get_bot_reply(user_id, user_message):
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
+async def send_big_text(update: Update, text_to_send):
+    if len(text_to_send) > 4096:
+        messages = [text_to_send[i:i+4096] for i in range(0, len(text_to_send), 4096)]
+        for msg in messages:
+            await update.message.reply_text(msg)
+    else:
+        await update.message.reply_text(text_to_send)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     get_admins_from_os()
     user = update.effective_user
@@ -309,7 +317,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     user_message = update.message.text
     bot_reply = await get_bot_reply(user.id, user_message)
-    await update.message.reply_text(bot_reply)
+    await send_big_text(update, bot_reply)
 
 async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
