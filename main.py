@@ -149,7 +149,7 @@ def get_admins_from_os():
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    await user_histories(user.id, [])
+    await user_histories.set(user.id, [])
     await update.message.reply_text("Контекст беседы был сброшен. Начинаем новую беседу.")
     logging.info(f"Context for user {user.id} is reset")
 
@@ -232,7 +232,7 @@ async def in_user_list(user):
 
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
-    history = await user_histories.get(user_id, [])
+    history = await user_histories.get(user_id)
     #history = [system_message] + history
     # Добавляем новое сообщение пользователя в историю
     history.append({"role": "user", "content": user_message})
