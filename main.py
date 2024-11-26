@@ -92,7 +92,7 @@ def get_user_ids():
     """Получает все идентификаторы пользователей из базы данных."""
     with connect_to_db() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT user_id FROM user_ids")
+            cursor.execute("SELECT DISTINCT user_id FROM user_ids")
             result = cursor.fetchall()
     return [row[0] for row in result]
 
@@ -137,7 +137,8 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if in_admin_list(user):
         if len(context.args) == 0:
-            await update.message.reply_text("Вы не указали идентификатор пользователя.")
+            await update.message.reply_text("Вы не указали идентификатор пользователя. Команда должна выглядеть так: /add <идентификатор пользователя>")
+
             return
         elif not context.args[0].isdigit():
             await update.message.reply_text("Идентификатор должен быть числом.")
@@ -158,7 +159,9 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user = update.effective_user
     if in_admin_list(user):
         if len(context.args) == 0:
-            await update.message.reply_text("Вы не указали идентификатор пользователя.")
+            await update.message.reply_text("Вы не указали идентификатор пользователя. Команда должна выглядеть так: /remove <идентификатор пользователя>")
+
+
             return
         elif not context.args[0].isdigit():
             await update.message.reply_text("Идентификатор должен быть числом.")
