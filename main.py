@@ -298,6 +298,7 @@ async def main():
     application.add_handler(CommandHandler("list", list_users))
     application.add_handler(CommandHandler("add", add_user))
     application.add_handler(CommandHandler("remove", remove_user))
+    application.add_handler(CommandHandler("reset", reset))
 
     # Инициализация и запуск приложения
     await application.initialize()
