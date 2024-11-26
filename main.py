@@ -2,6 +2,7 @@ import asyncio
 import os
 import logging
 import mysql.connector
+import tempfile
 
 from telegram import Bot
 from functools import partial
@@ -311,13 +312,47 @@ async def send_big_text(update: Update, text_to_send):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     get_admins_from_os()
     user = update.effective_user
+    user_message = update.message.text
+    return await handle_message_inner(update, user, user_message)
+
+async def handle_message_inner(update, user, user_message):
     if not await in_user_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
         return
-    user_message = update.message.text
+    
     bot_reply = await get_bot_reply(user.id, user_message)
     await send_big_text(update, bot_reply)
+
+async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
+    user = update.effective_user
+    voice = update.message.voice
+
+    if not voice:
+        await update.message.reply_text("Что-то пошло не так. Голосовое сообщение не найдено.")
+        return
+
+    # Получение файла голосового сообщения
+    file = await context.bot.get_file(voice.file_id)
+
+    # Использование временного файла для хранения голосового сообщения
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".ogg") as temp_file:
+        await file.download_to_drive(temp_file.name)  # Загрузка файла
+        logging.info(f"Временный файл загружен: {temp_file.name}")
+
+        try:
+            # Распознавание речи с использованием OpenAI
+            with open(temp_file.name, "rb") as audio_file:
+                transcript = openai_client.Audio.transcribe("whisper-1", audio_file)
+
+            # Получение распознанного текста
+            recognized_text = transcript.get("text", "Не удалось распознать текст.")
+            await handle_message_inner(update, user, recognized_text) 
+            logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
+        except Exception as e:
+            logging.error(f"Ошибка при распознавании текста через OpenAI: {e}")
+            await update.message.reply_text("Произошла ошибка при распознавании вашего сообщения.")
 
 async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
@@ -340,6 +375,7 @@ async def main():
     application.add_handler(CommandHandler("add", add_user))
     application.add_handler(CommandHandler("remove", remove_user))
     application.add_handler(CommandHandler("reset", reset))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
 
     # Инициализация и запуск приложения
     await application.initialize()
