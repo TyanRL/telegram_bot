@@ -17,6 +17,8 @@ from aiohttp import web
 from openai import OpenAI
 
 
+version="1.5"
+
 # Получение параметров подключения из переменных окружения
 MYSQL_HOST = os.getenv('MYSQL_ADDON_HOST')
 MYSQL_DB = os.getenv('MYSQL_ADDON_DB')
@@ -36,19 +38,49 @@ model_name="chatgpt-4o-latest"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-# администраторы
-administrators_ids = []
-user_ids=[]
-
-user_histories = {}
-max_history_length = 50  # Максимальное количество сообщений в истории
-
 system_message = {
     "role": "system",
     "content": "Вы — помощник, который отвечает на вопросы пользователей."
 }
 
-version="1.4"
+max_history_length = 20  # Максимальное количество сообщений в истории
+
+# администраторы
+administrators_ids = []
+
+class SafeDict:
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.data = {}
+
+    async def set(self, key, value):
+        async with self.lock:
+            self.data[key] = value
+
+    async def get(self, key):
+        async with self.lock:
+            return self.data.get(key)
+
+class SafeList:
+    def __init__(self, l: list):
+        self.lock = asyncio.Lock()
+        self.data = l
+
+    async def append(self, value):
+        async with self.lock:
+            self.data.append(value)
+
+    async def get(self, index):
+        async with self.lock:
+            return self.data[index]
+    
+    async def get_all(self):
+        async with self.lock:
+            return list(self.data)
+# пользователи
+user_ids= SafeList([])
+user_histories = SafeDict()
+
 
 #----------------------------------MySQL------------------------------------------
 if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
@@ -117,7 +149,7 @@ def get_admins_from_os():
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    user_histories[user.id] = []
+    await user_histories(user.id, [])
     await update.message.reply_text("Контекст беседы был сброшен. Начинаем новую беседу.")
     logging.info(f"Context for user {user.id} is reset")
 
@@ -125,7 +157,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     get_admins_from_os()
 
-    if not in_user_list(user):
+    if not await in_user_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
@@ -145,9 +177,11 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         new_user_id = int(context.args[0])
-        if new_user_id not in user_ids:
+        temp_user_ids = await user_ids.get_all()
+
+        if new_user_id not in temp_user_ids:
             save_user_id(new_user_id)
-            user_ids.append(new_user_id)
+            await user_ids.append(new_user_id)
             await update.message.reply_text("Пользователь добавлен в список допустимых.")
         else:
             await update.message.reply_text("Пользователь уже в списке допустимых.")
@@ -168,8 +202,9 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         
         new_user_id = int(context.args[0])
-        if new_user_id in user_ids:
-            user_ids.remove(new_user_id)
+        temp_user_ids = await user_ids.get_all()
+        if new_user_id in temp_user_ids:
+            await user_ids.remove(new_user_id)
             remove_user_id(new_user_id)
             await update.message.reply_text("Пользователь удален из списка допустимых.")
         else:
@@ -180,22 +215,24 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if in_admin_list(user):
-        await update.message.reply_text("Список допустимых пользователей: " + str(user_ids))
+        temp_user_ids = await user_ids.get_all()
+        await update.message.reply_text("Список допустимых пользователей: " + str(temp_user_ids))
     else:
         await update.message.reply_text("У вас нет прав на эту команду.")
 
 
 def in_admin_list(user):
     return user.id in administrators_ids
-def in_user_list(user):
-    return user.id in administrators_ids or in_admin_list(user)
+async def in_user_list(user):
+    temp_user_ids = await user_ids.get_all()
+    return user.id in temp_user_ids or in_admin_list(user)
 
 #------------------------------------------------end of COMMANDS-----------------------------------------------------------------------
 
 
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
-    history = user_histories.get(user_id, [])
+    history = await user_histories.get(user_id, [])
     #history = [system_message] + history
     # Добавляем новое сообщение пользователя в историю
     history.append({"role": "user", "content": user_message})
@@ -223,7 +260,7 @@ async def get_bot_reply(user_id, user_message):
         history.append({"role": "assistant", "content": bot_reply})
         
         # Обновляем историю пользователя
-        user_histories[user_id] = history
+        await user_histories.set(user_id, history)
         
         return bot_reply
     except Exception as e:
@@ -233,7 +270,7 @@ async def get_bot_reply(user_id, user_message):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     get_admins_from_os()
     user = update.effective_user
-    if not in_user_list(user):
+    if not await in_user_list(user):
         await update.message.reply_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
         logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
         return
@@ -251,7 +288,7 @@ async def main():
     # Получение списка пользователей из переменной окружения
     connect_to_db()
     create_table()
-    user_ids=get_user_ids() 
+    user_ids=SafeList(get_user_ids())
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 
