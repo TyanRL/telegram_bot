@@ -17,12 +17,13 @@ from users import get_admins, get_all, in_admin_list, in_user_list, remove_user_
 
 user_histories = SafeDict()
 last_session = SafeDict() 
+translate_mode=SafeDict()
 
 
 def get_history():
     return user_histories
 
-async def set_session_info(user) -> None:
+def set_session_info(user) -> None:
     last_session.set("username", user.username)
     last_session.set("userid", user.id)
     last_session.set("time", datetime.datetime.now())
@@ -114,9 +115,9 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if in_admin_list(user):
-        username=last_session.get("username",None)
-        userid=last_session.get("userid",None)
-        last_session_time= last_session.get("time",None)
+        username=await last_session.get("username",None)
+        userid=await last_session.get("userid",None)
+        last_session_time=await last_session.get("time",None)
         if username is None or last_session_time is None:
             await update.message.reply_text("Нет данных о последней сессии")
         else:

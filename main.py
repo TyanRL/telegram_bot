@@ -15,7 +15,8 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_info, set_session_info, start
+from state_and_commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_info, set_session_info, start
+from common_types import SafeDict
 from users import get_admins, in_user_list
 
 
@@ -97,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
-    await set_session_info(user)
+    set_session_info(user)
     return await handle_message_inner(update, user, user_message)
 
 async def handle_message_inner(update, user, user_message):
@@ -118,7 +119,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
-    await set_session_info(user)
+    set_session_info(user)
     # Получение файла голосового сообщения
     file = await context.bot.get_file(voice.file_id)
 
