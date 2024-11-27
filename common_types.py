@@ -18,6 +18,10 @@ class SafeDict:
     async def get(self, key, default_value):
         async with self.lock:
             return self.data.get(key, default_value)
+    
+    async def delete(self, key):
+        async with self.lock:
+            del self.data[key]
 
 class SafeList:
     def __init__(self, l: list):
