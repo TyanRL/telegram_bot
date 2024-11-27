@@ -45,7 +45,7 @@ administrators_ids = get_admins()
 
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
-    history = await user_histories.get(user_id) or []
+    history = await user_histories.get(user_id, [])
     
     # Добавляем новое сообщение пользователя в историю
     history.append({"role": "user", "content": user_message})
