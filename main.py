@@ -15,7 +15,7 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_session_info, start
+from commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_info, set_session_info, start
 from users import get_admins, in_user_list
 
 
@@ -28,6 +28,8 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
 model_name="chatgpt-4o-latest"
+voice_recognition_model_name="whisper-1"
+
 
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
@@ -128,7 +130,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             # Распознавание речи с использованием OpenAI
             transcription = openai_client.audio.transcriptions.create(
-                            model='whisper-1',
+                            model=voice_recognition_model_name,
                             file=open(temp_file.name, 'rb')
                             )
             recognized_text=transcription.text
@@ -151,7 +153,7 @@ async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
 
 async def main():
-
+    set_info(model_name, voice_recognition_model_name, version)
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 

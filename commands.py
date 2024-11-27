@@ -23,7 +23,8 @@ def get_history():
     return user_histories
 
 def set_session_info(update: Update) -> None:
-    last_session.set("user", update.effective_user)
+    last_session.set("username", update.effective_user.username)
+    last_session.set("userid", update.effective_user.id)
     last_session.set("time", datetime.datetime.now())
 
 model_name=""
@@ -113,12 +114,13 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if in_admin_list(user):
-        last_session_user=last_session.get("user",None)
+        username=last_session.get("username",None)
+        userid=last_session.get("userid",None)
         last_session_time= last_session.get("time",None)
-        if last_session_user is None or last_session_time is None:
+        if username is None or last_session_time is None:
             await update.message.reply_text("Нет данных о последней сессии")
         else:
-            await update.message.reply_text(f"Последняя сессия была с {last_session_user.username} ID: {last_session_user.id} в {last_session_time}")
+            await update.message.reply_text(f"Последняя сессия была с {username} ID: {userid} в {last_session_time}")
     else:
         await update.message.reply_text("У вас нет прав на эту команду.")
 
