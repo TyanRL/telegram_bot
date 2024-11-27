@@ -22,7 +22,7 @@ last_session = SafeDict()
 def get_history():
     return user_histories
 
-def set_session_info(user) -> None:
+async def set_session_info(user) -> None:
     last_session.set("username", user.username)
     last_session.set("userid", user.id)
     last_session.set("time", datetime.datetime.now())
