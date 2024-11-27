@@ -24,9 +24,9 @@ def get_history():
     return user_histories
 
 async def set_session_info(user) -> None:
-    last_session.set("username", user.username)
-    last_session.set("userid", user.id)
-    last_session.set("time", datetime.datetime.now())
+    await last_session.set("username", user.username)
+    await last_session.set("userid", user.id)
+    await last_session.set("time", datetime.datetime.now())
 
 async def set_translate_mode(user) -> None:
     translate_mode
