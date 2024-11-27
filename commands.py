@@ -26,6 +26,20 @@ def set_session_info(update: Update) -> None:
     last_session.set("user", update.effective_user)
     last_session.set("time", datetime.datetime.now())
 
+model_name=""
+voice_recognition_model_name=""
+version=""
+
+def set_info(openai_model_name: str, vr_model_name: str, bot_version: str) -> None:
+    global model_name
+    global voice_recognition_model_name
+    global version
+    version = bot_version
+    model_name = openai_model_name
+    voice_recognition_model_name = vr_model_name
+
+
+
 #-----------------------------------------------COMMANDS-----------------------------------------------------------------------
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -105,6 +119,17 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Нет данных о последней сессии")
         else:
             await update.message.reply_text(f"Последняя сессия была с {last_session_user.username} ID: {last_session_user.id} в {last_session_time}")
+    else:
+        await update.message.reply_text("У вас нет прав на эту команду.")
+
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if in_user_list(user):
+    
+        if version == "":
+            await update.message.reply_text("Нет данных.")
+        else:
+            await update.message.reply_text(f"Версия бота: {version}, модель: {model_name}, модель для распознавания голоса: {voice_recognition_model_name}")
     else:
         await update.message.reply_text("У вас нет прав на эту команду.")
 

@@ -15,7 +15,7 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from commands import add_user, get_history, get_last_session, list_users, remove_user, reset, set_session_info, start
+from commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_session_info, start
 from users import get_admins, in_user_list
 
 
@@ -165,6 +165,7 @@ async def main():
     application.add_handler(CommandHandler("remove", remove_user))
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(CommandHandler("last_session", get_last_session))
+    application.add_handler(CommandHandler("info", info))
     
 
     # Инициализация и запуск приложения
