@@ -25,7 +25,7 @@ def get_history():
 
 async def set_session_info(user) -> None:
     # Получение текущего времени в формате UTC
-    utc_time = datetime.now(ZoneInfo("UTC"))    
+    utc_time = datetime.datetime.now(ZoneInfo("UTC"))    
 
     # Преобразование времени из UTC в локальное время
     local_timezone = ZoneInfo('Europe/Moscow')  # замените на вашу временную зону

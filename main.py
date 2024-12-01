@@ -98,12 +98,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
-    await set_session_info(user)
     return await handle_message_inner(update, user, user_message)
 
 async def handle_message_inner(update, user, user_message):
     bot_reply = await get_bot_reply(user.id, user_message)
     await send_big_text(update, bot_reply)
+    await set_session_info(user)
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
@@ -117,7 +117,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
-    await set_session_info(user)
+    
     # Получение файла голосового сообщения
     file = await context.bot.get_file(voice.file_id)
 
