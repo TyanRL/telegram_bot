@@ -91,7 +91,10 @@ async def save_last_session(user_id, username, last_session_time):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("INSERT INTO last_session (userid, username, last_session_time) VALUES (%s, %s, %s)",
+        cursor.execute(  """
+                INSERT INTO last_session (userid, username, last_session_time) VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE username = VALUES(username), last_session_time = VALUES(last_session_time)
+                """,
                 (user_id, username, last_session_time))
 
         connection.commit()
