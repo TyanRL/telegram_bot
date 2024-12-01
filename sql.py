@@ -44,6 +44,7 @@ def connect_to_db():
 
 def create_tables():
     create_user_id_table()
+    create_last_session_table()
 
 def create_user_id_table():
     """Создает таблицу для хранения идентификаторов пользователей."""
