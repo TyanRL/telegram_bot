@@ -123,7 +123,7 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if in_admin_list(user):
-        last_sessions= await get_all_session()
+        last_sessions= get_all_session()
         last_sesssions_str="Список последних сессий пользователей: \n"
         for last_session in last_sessions:
             username=await last_session.get("username",None)

@@ -102,18 +102,18 @@ async def save_last_session(user_id, username, last_session_time):
         cursor.close()
         connection.close()
 
-async def get_all_session():
-    connection = await connect_to_db()
+def get_all_session():
+    connection = connect_to_db()
     try:
-        async with connection.cursor() as cursor:
-            # Выполнение SELECT-запроса для получения всех пользователей
-            await cursor.execute("SELECT userid, username, last_session_time FROM last_session")
-            result = await cursor.fetchall()  # Получаем все строки результата
-            return [{"userid": row[0], "username": row[1], "last_session_time": row[2]} for row in result]
+        cursor = connection.cursor()
+        cursor.execute("SELECT userid, username, last_session_time FROM last_session")
+        result = cursor.fetchall()
+        return [{"userid": row[0], "username": row[1], "last_session_time": row[2]} for row in result]
     except mysql.connector.Error as err:
         logging.error(f"Ошибка при получении пользователей из MySQL: {err}")
         raise
     finally:
+        cursor.close()
         connection.close()
 
 async def save_user_id(user_id):
