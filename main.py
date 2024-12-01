@@ -17,7 +17,7 @@ from openai import OpenAI
 
 from state_and_commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_info, set_session_info, start
 from common_types import SafeDict
-from users import get_admins, in_user_list
+from sql import get_admins, in_user_list
 
 
 version="2.0"
@@ -102,8 +102,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return await handle_message_inner(update, user, user_message)
 
 async def handle_message_inner(update, user, user_message):
-    
-    
     bot_reply = await get_bot_reply(user.id, user_message)
     await send_big_text(update, bot_reply)
 

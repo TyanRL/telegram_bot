@@ -1,6 +1,7 @@
 
 import datetime
 import logging
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.ext import (
@@ -12,11 +13,10 @@ from telegram.ext import (
 )
 
 from common_types import SafeDict
-from users import get_admins, get_all, in_admin_list, in_user_list, remove_user_id, save_user_id
+from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
 
 
 user_histories = SafeDict()
-last_session = SafeDict() 
 translate_mode=SafeDict()
 
 
@@ -24,10 +24,14 @@ def get_history():
     return user_histories
 
 async def set_session_info(user) -> None:
-    await last_session.set("username", user.username)
-    await last_session.set("userid", user.id)
-    await last_session.set("time", datetime.datetime.now())
+    # Получение текущего времени в формате UTC
+    utc_time = datetime.now(ZoneInfo("UTC"))    
 
+    # Преобразование времени из UTC в локальное время
+    local_timezone = ZoneInfo('Europe/Moscow')  # замените на вашу временную зону
+    local_time = utc_time.astimezone(local_timezone)
+    await save_last_session(user.id, user.username, local_time)
+    
 async def set_translate_mode(user) -> None:
     translate_mode
 
@@ -119,13 +123,16 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if in_admin_list(user):
-        username=await last_session.get("username",None)
-        userid=await last_session.get("userid",None)
-        last_session_time=await last_session.get("time",None)
-        if username is None or last_session_time is None:
-            await update.message.reply_text("Нет данных о последней сессии")
-        else:
-            await update.message.reply_text(f"Последняя сессия была с {username} ID: {userid} в {last_session_time}")
+        last_sessions= await get_all_session()
+        last_sesssions_str="Список последних сессий пользователей: \n"
+        for last_session in last_sessions:
+            username=await last_session.get("username",None)
+            userid=await last_session.get("userid",None)
+            last_session_time=await last_session.get("time",None)
+            if username is not None and last_session_time is not None:
+                last_sesssions_str+=f"Пользователь {username} ID: {userid} в {last_session_time}\n"
+            
+            await update.message.reply_text(last_sesssions_str)
     else:
         await update.message.reply_text("У вас нет прав на эту команду.")
 

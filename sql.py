@@ -42,7 +42,10 @@ def connect_to_db():
         logging.error(f"Ошибка подключения к MySQL: {err}")
         raise
 
-def create_table():
+def create_tables():
+    create_user_id_table()
+
+def create_user_id_table():
     """Создает таблицу для хранения идентификаторов пользователей."""
     connection = connect_to_db()
     try:
@@ -61,8 +64,59 @@ def create_table():
         cursor.close()
         connection.close()
 
+def create_last_session_table():
+    """Создает таблицу для хранения последней сессии."""
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS last_session (
+        userid INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        last_session_time DATETIME
+    )
+        """)
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка создания таблицы в MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+async def save_last_session(user_id, username, last_session_time):
+    if user_id not in await user_ids.get_all():
+        await user_ids.append(user_id)
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("INSERT INTO last_session (userid, username, last_session_time) VALUES (%s, %s, %s)",
+                (user_id, username, last_session_time))
+
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка сохранения последней сессии в MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+async def get_all_session():
+    connection = await connect_to_db()
+    try:
+        async with connection.cursor() as cursor:
+            # Выполнение SELECT-запроса для получения всех пользователей
+            await cursor.execute("SELECT userid, username, last_session_time FROM last_session")
+            result = await cursor.fetchall()  # Получаем все строки результата
+            return [{"userid": row[0], "username": row[1], "last_session_time": row[2]} for row in result]
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка при получении пользователей из MySQL: {err}")
+        raise
+    finally:
+        connection.close()
+
 async def save_user_id(user_id):
-    if user_id not in user_ids:
+    if user_id not in await user_ids.get_all():
         await user_ids.append(user_id)
     """Сохраняет идентификатор пользователя в базу данных."""
     connection = connect_to_db()
@@ -129,5 +183,5 @@ async def in_user_list(user):
 get_admins_from_os() 
 # Получение списка пользователей из переменной окружения
 connect_to_db()
-create_table()
+create_tables()
 user_ids=SafeList(get_user_ids())
