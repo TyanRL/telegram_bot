@@ -136,7 +136,7 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if username is not None and last_session_time is not None:
                 last_sesssions_str+=f"Пользователь {username} ID: {userid} в {last_session_time}\n"
             
-            await update.message.reply_text(last_sesssions_str)
+        await update.message.reply_text(last_sesssions_str)
     else:
         await update.message.reply_text("У вас нет прав на эту команду.")
 
