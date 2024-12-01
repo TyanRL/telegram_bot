@@ -126,9 +126,9 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_sessions= get_all_session()
         last_sesssions_str="Список последних сессий пользователей: \n"
         for last_session in last_sessions:
-            username=await last_session.get("username",None)
-            userid=await last_session.get("userid",None)
-            last_session_time=await last_session.get("time",None)
+            username=last_session.get("username",None)
+            userid=last_session.get("userid",None)
+            last_session_time=last_session.get("time",None)
             if username is not None and last_session_time is not None:
                 last_sesssions_str+=f"Пользователь {username} ID: {userid} в {last_session_time}\n"
             
