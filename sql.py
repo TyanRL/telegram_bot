@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 import mysql.connector
 
 from common_types import SafeList
@@ -30,17 +31,27 @@ if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
     raise EnvironmentError("Не установлены все необходимые переменные окружения для подключения к MySQL.")
 
 def connect_to_db():
-    try:
-        return mysql.connector.connect(
-            host=MYSQL_HOST,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=MYSQL_DB,
-            port=MYSQL_PORT
-        )
-    except mysql.connector.Error as err:
-        logging.error(f"Ошибка подключения к MySQL: {err}")
-        raise
+    count = 0
+    while True:
+        try:
+            return mysql.connector.connect(
+                host=MYSQL_HOST,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=MYSQL_DB,
+                port=MYSQL_PORT
+            )
+        except mysql.connector.Error as err:
+            logging.error(f"Ошибка подключения к MySQL: {err}. Попытка {count} из 10.")
+            count += 1
+            if count > 10:
+                logging.error("Подключение к MySQL не удалось.")
+                raise
+            else:
+                # ждем 5 секунд
+                time.sleep(5)
+                continue
+
 
 def create_tables():
     create_user_id_table()
