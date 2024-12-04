@@ -20,7 +20,7 @@ from common_types import SafeDict
 from sql import get_admins, in_user_list
 
 
-version="2.0"
+version="2.1"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
