@@ -86,13 +86,10 @@ async def add_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Создаём кнопку для запроса геолокации
     location_button = KeyboardButton("Отправить геолокацию", request_location=True)
     reply_markup = ReplyKeyboardMarkup([[location_button]], resize_keyboard=True)
-
-    # Сообщение с кнопкой
-    reply_service_text(update,
-        "Пожалуйста, нажмите на кнопку ниже, чтобы отправить свою геолокацию.",
-        reply_markup=reply_markup,
-    )
-
+    message = "Пожалуйста, нажмите на кнопку ниже, чтобы отправить боту свою геолокацию."
+    escaped_text = escape_markdown(message, version=2)
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode="MarkdownV2",reply_markup=reply_markup)
+    
 
 
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
