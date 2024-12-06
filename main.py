@@ -29,7 +29,7 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
-model_name="chatgpt-4o-latest"
+model_name="gpt-4o"
 voice_recognition_model_name="whisper-1"
 
 
@@ -41,7 +41,11 @@ def get_system_message():
     local_time = get_local_time()
     system_message = {
         "role": "system",
-        "content": f"Вы — помощник, который отвечает на вопросы пользователей. Локальное время по Москве — {local_time}.",
+        "content": 
+f"""
+Вы — помощник, который отвечает на вопросы пользователей. Время по Москве — {local_time}. 
+Если в истории нет геолокации, то нужно запросить соответсвующую функцию.
+""",
     }
     return system_message
 
