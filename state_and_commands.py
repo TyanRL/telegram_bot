@@ -59,7 +59,7 @@ async def reply_text(update: Update, message:str):
 
 async def reply_service_text(update: Update, message:str):
     escaped_text = escape_markdown(message, version=2)
-    await reply_text(update, f"_{escaped_text}_")
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode="MarkdownV2")
 
 
 
