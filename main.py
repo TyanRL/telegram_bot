@@ -15,7 +15,7 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from state_and_commands import add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, start
+from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 
@@ -165,6 +165,16 @@ async def not_authorized_message(update, user):
 async def set_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
 
+# Обработка геолокации
+async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.location:
+        history = await user_histories.get(update.effective_user.id, [])
+        latitude = update.message.location.latitude
+        longitude = update.message.location.longitude
+        location_message = f"Твои координаты:\nШирота: {latitude}\nДолгота: {longitude}"
+        history.append({"role": "system", "content": location_message})
+        reply_service_text(update,location_message)
+
 async def main():
     set_info(model_name, voice_recognition_model_name, version)
     # Инициализация приложения
@@ -173,6 +183,7 @@ async def main():
     # Добавление обработчиков
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
+    application.add_handler(MessageHandler(filters.LOCATION, location_handler))
     # Добавление обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list", list_users))
@@ -181,6 +192,8 @@ async def main():
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(CommandHandler("last_session", get_last_session))
     application.add_handler(CommandHandler("info", info))
+    application.add_handler(CommandHandler("location", add_location_button))
+    
     
 
     # Инициализация и запуск приложения

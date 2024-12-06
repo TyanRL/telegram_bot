@@ -3,7 +3,7 @@ import datetime
 import logging
 from zoneinfo import ZoneInfo
 
-from telegram import Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -80,6 +80,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         return
     await reply_text(update, 'Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
+
+# Команда для создания кнопки отправки геолокации
+async def add_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Создаём кнопку для запроса геолокации
+    location_button = KeyboardButton("Отправить геолокацию", request_location=True)
+    reply_markup = ReplyKeyboardMarkup([[location_button]], resize_keyboard=True)
+
+    # Сообщение с кнопкой
+    reply_service_text(update,
+        "Пожалуйста, нажмите на кнопку ниже, чтобы отправить свою геолокацию.",
+        reply_markup=reply_markup,
+    )
+
+
 
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
