@@ -93,9 +93,9 @@ async def send_big_text(update: Update, text_to_send):
     if len(text_to_send) > 4096:
         messages = [text_to_send[i:i+4096] for i in range(0, len(text_to_send), 4096)]
         for msg in messages:
-            await reply_text(msg)
+            await reply_text(update,msg)
     else:
-        await reply_text(text_to_send)
+        await reply_text(update,text_to_send)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -116,7 +116,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     voice = update.message.voice
 
     if not voice:
-        await reply_service_text("Что-то пошло не так. Голосовое сообщение не найдено.")
+        await reply_service_text(update,"Что-то пошло не так. Голосовое сообщение не найдено.")
         return
     
     if not await in_user_list(user):
@@ -140,17 +140,17 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             recognized_text=transcription.text
             
             if recognized_text=="":
-                 await reply_service_text("Произошла ошибка при распознавании вашего сообщения.")
+                 await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
                  return
             await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
             await handle_message_inner(update, user, recognized_text) 
             logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
         except Exception as e:
             logging.error(f"Ошибка при распознавании текста через OpenAI: {e}")
-            await reply_service_text("Произошла ошибка при распознавании вашего сообщения.")
+            await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
 
 async def not_authorized_message(update, user):
-    await reply_service_text(f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
+    await reply_service_text(update,f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
     logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
 async def set_webhook(application):
