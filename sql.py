@@ -20,6 +20,10 @@ administrators_ids = []
 # пользователи
 user_ids= SafeList([])
 
+user_ids_table_name= 'user_ids'
+last_session_table_name = 'last_session_big_int'
+
+
 def get_admins():
     return administrators_ids
 
@@ -62,9 +66,9 @@ def create_user_id_table():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_ids (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {user_ids_table_name} (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 user_id BIGINT NOT NULL
             )
         """)
@@ -81,9 +85,9 @@ def create_last_session_table():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS last_session (
-        userid INT AUTO_INCREMENT PRIMARY KEY,
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {last_session_table_name} (
+        userid BIGINT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) NOT NULL,
         last_session_time DATETIME
     )
@@ -106,8 +110,8 @@ async def save_last_session(user_id, username, last_session_time):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute(  """
-                INSERT INTO last_session (userid, username, last_session_time) VALUES (%s, %s, %s)
+        cursor.execute(  f"""
+                INSERT INTO {last_session_table_name} (userid, username, last_session_time) VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE username = VALUES(username), last_session_time = VALUES(last_session_time)
                 """,
                 (user_id, username, last_session_time))
@@ -124,7 +128,7 @@ def get_all_session():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT userid, username, last_session_time FROM last_session")
+        cursor.execute(f"SELECT userid, username, last_session_time FROM {last_session_table_name}")
         result = cursor.fetchall()
         return [{"userid": row[0], "username": row[1], "last_session_time": row[2]} for row in result]
     except mysql.connector.Error as err:
@@ -141,7 +145,7 @@ async def save_user_id(user_id):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("INSERT INTO user_ids (user_id) VALUES (%s)", (user_id,))
+        cursor.execute(f"INSERT INTO {user_ids_table_name} (user_id) VALUES (%s)", (user_id,))
         connection.commit()
     except mysql.connector.Error as err:
         logging.error(f"Ошибка сохранения пользователя в MySQL: {err}")
@@ -155,7 +159,7 @@ def get_user_ids():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT DISTINCT user_id FROM user_ids")
+        cursor.execute(f"SELECT DISTINCT user_id FROM {user_ids_table_name}")
         result = cursor.fetchall()
         return [row[0] for row in result]
     except mysql.connector.Error as err:
@@ -171,7 +175,7 @@ async def remove_user_id(user_id):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute("DELETE FROM user_ids WHERE user_id = %s", (user_id,))
+        cursor.execute(f"DELETE FROM {user_ids_table_name} WHERE user_id = %s", (user_id,))
         connection.commit()
     except mysql.connector.Error as err:
         logging.error(f"Ошибка удаления пользователя из MySQL: {err}")
