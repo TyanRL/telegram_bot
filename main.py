@@ -15,12 +15,13 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
+from openai_api import get_model_answer
 from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 
 
-version="2.3"
+version="3.0"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -50,31 +51,21 @@ user_histories=get_history()
 
 administrators_ids = get_admins()
 
-async def get_bot_reply(user_id, user_message):
+async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
+
     # Получаем или создаем историю сообщений для пользователя
-    history = await get_history(user_id, user_message)
+    history = await get_history(update.effective_user.id, user_message)
     
     try:
         system_message= get_system_message()
         logging.info([system_message] + history)
-        loop = asyncio.get_event_loop()
-        # Вызываем OpenAI API с историей сообщений
-        response = await loop.run_in_executor(
-            None,
-            partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=[system_message] + history,
-                max_tokens=16384,
-            )
-        )
-        bot_reply = response.choices[0].message.content.strip()
         
+        bot_reply = await get_model_answer(openai_client, update, context, model_name, [system_message] + history)
         # Добавляем ответ бота в историю
         history.append({"role": "assistant", "content": bot_reply})
         
         # Обновляем историю пользователя
-        await user_histories.set(user_id, history)
+        await user_histories.set(update.effective_user.id, history)
         
         return bot_reply
     except Exception as e:
@@ -129,12 +120,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
-    return await handle_message_inner(update, user, user_message)
+    return await handle_message_inner(update, context, user_message)
 
-async def handle_message_inner(update, user, user_message):
-    bot_reply = await get_bot_reply(user.id, user_message)
+async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
+    bot_reply = await get_bot_reply(update, context, user_message)
     await send_big_text(update, bot_reply)
-    await set_session_info(user)
+    await set_session_info(update.effective_user)
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
@@ -169,7 +160,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                  await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
                  return
             await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
-            await handle_message_inner(update, user, recognized_text) 
+            await handle_message_inner(update, context, recognized_text) 
             logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
         except Exception as e:
             logging.error(f"Ошибка при распознавании текста через OpenAI: {e}")
