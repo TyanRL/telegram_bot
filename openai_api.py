@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import openai
 from telegram import Update
 from telegram.ext import (
@@ -54,5 +55,5 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
 
     except Exception as e:
         # Логируем ошибки
-        print(f"Ошибка при вызове модели: {e}")
+        logging.error(f"Ошибка при обращении к OpenAI API: {e}")
         return "Произошла ошибка при обработке запроса."
