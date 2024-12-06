@@ -15,12 +15,12 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from state_and_commands import add_user, get_history, get_last_session, info, list_users, remove_user, reset, set_info, set_session_info, start
+from state_and_commands import add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reset, set_info, set_session_info, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 
 
-version="2.1"
+version="2.2"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -35,10 +35,14 @@ voice_recognition_model_name="whisper-1"
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
 
-system_message = {
-    "role": "system",
-    "content": "Вы — помощник, который отвечает на вопросы пользователей."
-}
+def get_system_message():
+    # Сообщение системы для пользователя
+    local_time = get_local_time()
+    system_message = {
+        "role": "system",
+        "content": f"Вы — помощник, который отвечает на вопросы пользователей. Локальное время по Москве — {local_time}.",
+    }
+    return system_message
 
 max_history_length = 20  # Максимальное количество сообщений в истории
 
@@ -59,6 +63,7 @@ async def get_bot_reply(user_id, user_message):
         history = history[-max_history_length:]
     
     try:
+        system_message= get_system_message()
         logging.info([system_message] + history)
         loop = asyncio.get_event_loop()
         # Вызываем OpenAI API с историей сообщений

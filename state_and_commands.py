@@ -25,12 +25,16 @@ def get_history():
 
 async def set_session_info(user) -> None:
     # Получение текущего времени в формате UTC
+    local_time = get_local_time()
+    await save_last_session(user.id, user.username, local_time)
+
+def get_local_time():
     utc_time = datetime.datetime.now(ZoneInfo("UTC"))    
 
     # Преобразование времени из UTC в локальное время
     local_timezone = ZoneInfo('Europe/Moscow')  # замените на вашу временную зону
     local_time = utc_time.astimezone(local_timezone)
-    await save_last_session(user.id, user.username, local_time)
+    return local_time
     
 async def set_translate_mode(user) -> None:
     translate_mode

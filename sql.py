@@ -99,6 +99,10 @@ def create_last_session_table():
 async def save_last_session(user_id, username, last_session_time):
     if user_id not in await user_ids.get_all():
         await user_ids.append(user_id)
+
+    if username is None or username == '':
+        username = 'NDU'
+
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
