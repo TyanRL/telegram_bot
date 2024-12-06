@@ -190,7 +190,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         longitude = update.message.location.longitude
         location_message = f"Твои координаты:\nШирота: {latitude}\nДолгота: {longitude}"
         history.append({"role": "system", "content": location_message})
-        reply_service_text(update,location_message)
+        await reply_service_text(update,location_message)
 
 async def main():
     set_info(model_name, voice_recognition_model_name, version)
