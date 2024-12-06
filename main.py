@@ -99,9 +99,11 @@ async def send_big_text(update: Update, text_to_send):
     history = await user_histories.get(update.effective_user.id, [])
     if len(history)==5 or len(history)==10:
         await reply_service_text(update, 
-                                 """Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
-                                 Бот в своих ответах учитывает предыдущие сообщения.
-                                 """)
+"""
+Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
+Бот в своих ответах учитывает предыдущие сообщения.
+"""
+)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
