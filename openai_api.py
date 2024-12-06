@@ -29,16 +29,15 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             }
         ]
 
-        # Вызываем OpenAI API с историей сообщений и объявленной функцией
-        response = await openai.ChatCompletion.acreate(
+        response = await openai_client.chat.completions.create(
             model=model_name,
             messages=messages,
             functions=functions,
-            function_call="auto",  # Используйте auto для определения вызова функций
+            function_call="auto",  # Let the model decide whether to call the function
             max_tokens=16384
         )
 
-        # Проверяем, вернулась ли функция для вызова
+        # Check if a function call was returned
         if (response.choices and 
             len(response.choices) > 0 and
             hasattr(response.choices[0].message, "function_call")):
@@ -48,6 +47,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             if function_call.name == "request_geolocation":
                 # Вызываем функцию запроса геолокации
                 await request_geolocation(update, context)
+                return None
 
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()

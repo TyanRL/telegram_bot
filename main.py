@@ -65,6 +65,10 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         logging.info([system_message] + history)
         
         bot_reply = await get_model_answer(openai_client, update, context, model_name, [system_message] + history)
+        
+        if bot_reply is None:
+            return None
+
         # Добавляем ответ бота в историю
         history.append({"role": "assistant", "content": bot_reply})
         
@@ -128,6 +132,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
     bot_reply = await get_bot_reply(update, context, user_message)
+    if bot_reply is None or len(bot_reply) == 0:
+        return
     await send_big_text(update, bot_reply)
     await set_session_info(update.effective_user)
 
