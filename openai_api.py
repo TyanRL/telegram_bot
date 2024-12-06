@@ -1,4 +1,5 @@
 import asyncio
+from functools import partial
 import logging
 import openai
 from telegram import Update
@@ -28,16 +29,19 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 }
             }
         ]
-
-        response = await openai_client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            functions=functions,
-            function_call="auto",  # Let the model decide whether to call the function
-            max_tokens=16384
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                functions=functions,
+                function_call="auto",  
+                max_tokens=16384
+            )
         )
-
-        # Check if a function call was returned
+        
         if (response.choices and 
             len(response.choices) > 0 and
             hasattr(response.choices[0].message, "function_call")):
