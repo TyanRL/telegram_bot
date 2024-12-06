@@ -14,6 +14,7 @@ from telegram.ext import (
 
 from common_types import SafeDict
 from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
+from telegram.helpers import escape_markdown
 
 
 user_histories = SafeDict()
@@ -53,10 +54,12 @@ def set_info(openai_model_name: str, vr_model_name: str, bot_version: str) -> No
     voice_recognition_model_name = vr_model_name
 
 async def reply_text(update: Update, message:str):
-    await update.message.reply_text(message, parse_mode="MarkdownV2")
+    escaped_text = escape_markdown(message, version=2)
+    await update.message.reply_text(escaped_text, parse_mode="MarkdownV2")
 
 async def reply_service_text(update: Update, message:str):
-    await reply_text(update, f"_{message}_")
+    escaped_text = escape_markdown(message, version=2)
+    await reply_text(update, f"_{escaped_text}_")
 
 
 
