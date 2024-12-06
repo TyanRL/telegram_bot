@@ -45,10 +45,10 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
         if (response.choices and 
             len(response.choices) > 0 and
             hasattr(response.choices[0].message, "function_call")):
-            
+    
             function_call = response.choices[0].message.function_call
             
-            if function_call.name == "request_geolocation":
+            if function_call and function_call.name == "request_geolocation":
                 # Вызываем функцию запроса геолокации
                 await request_geolocation(update, context)
                 return None
