@@ -52,15 +52,7 @@ administrators_ids = get_admins()
 
 async def get_bot_reply(user_id, user_message):
     # Получаем или создаем историю сообщений для пользователя
-    history = await user_histories.get(user_id, [])
-    
-    # Добавляем новое сообщение пользователя в историю
-    history.append({"role": "user", "content": user_message})
-    
-    # Ограничиваем историю, чтобы не превышать лимиты по токенам
-    
-    if len(history) > max_history_length:
-        history = history[-max_history_length:]
+    history = await get_history(user_id, user_message)
     
     try:
         system_message= get_system_message()
@@ -88,6 +80,31 @@ async def get_bot_reply(user_id, user_message):
     except Exception as e:
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
+
+async def get_history(user_id, user_message):
+    history = await user_histories.get(user_id, [])
+    # Добавляем новое сообщение пользователя в историю
+    history.append({"role": "user", "content": user_message})
+
+    # Разделяем историю на системные и прочие сообщения
+    system_messages = [m for m in history if m["role"] == "system"]
+    other_messages = [m for m in history if m["role"] != "system"]
+
+    # Вычисляем, сколько сообщений можно оставить из не-системных, 
+    # чтобы общая длина не превысила max_history_length
+    allowed_other_count = max_history_length - len(system_messages)
+    if allowed_other_count < 0:
+        # Если системных сообщений даже больше, чем max_history_length,
+        # то их не трогаем, но это означает, что ограничение фактически недостижимо
+        allowed_other_count = 0
+
+    # Если нужно урезать список прочих сообщений, оставляем последние allowed_other_count
+    if len(other_messages) > allowed_other_count:
+        other_messages = other_messages[-allowed_other_count:]
+
+    # Снова объединяем историю, сохранив системные сообщения на месте
+    history = system_messages + other_messages
+    return history
 
 async def send_big_text(update: Update, text_to_send):
     if len(text_to_send) > 4096:
