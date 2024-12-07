@@ -19,9 +19,10 @@ from openai_api import get_model_answer
 from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_geolocation, set_info, set_session_info, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
+from yandex_maps import get_address
 
 
-version="4.3"
+version="4.4"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -193,7 +194,8 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         history = await user_histories.get(update.effective_user.id, [])
         latitude = update.message.location.latitude
         longitude = update.message.location.longitude
-        location_message = f"Твои координаты:\nШирота: {latitude}\nДолгота: {longitude}"
+        address = await get_address(latitude,longitude)
+        location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude} \n Адрес: {address}"
         history.append({"role": "system", "content": location_message})
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await reply_service_text(update,location_message)

@@ -1,18 +1,15 @@
 import logging
 import os
-from ymaps import Geocode
+from ymaps import Geocode, GeocodeAsync
 
 # Ваш API-ключ
 API_KEY = os.getenv('YMAPS_GEOCODER')
 
-# Координаты: долгота и широта
-longitude = 37.618423
-latitude = 55.751244
 
-# Создаем клиент для геокодирования
-geocoder = Geocode(API_KEY)
-
-async def get_address(longitude, latitude):
+async def get_address(latitude, longitude):
+    # Создаем асинхронный клиент для геокодирования
+    geocoder = GeocodeAsync(API_KEY)
+    
     # Выполняем обратное геокодирование
     response = await geocoder.reverse([longitude, latitude])
 
@@ -21,5 +18,7 @@ async def get_address(longitude, latitude):
         geo_object = response['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']
         address = geo_object['metaDataProperty']['GeocoderMetaData']['text']
         logging.info(f'Адрес: {address}')
+        return address
     else:
         logging.error('Не удалось получить адрес по заданным координатам.')
+        return None
