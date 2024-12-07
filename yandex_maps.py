@@ -7,18 +7,21 @@ API_KEY = os.getenv('YMAPS_GEOCODER')
 
 
 async def get_address(latitude, longitude):
-    # Создаем асинхронный клиент для геокодирования
-    geocoder = GeocodeAsync(API_KEY)
+    try:
+        # Создаем асинхронный клиент для геокодирования
+        geocoder = GeocodeAsync(API_KEY)
     
-    # Выполняем обратное геокодирование
-    response = await geocoder.reverse([longitude, latitude])
+        # Выполняем обратное геокодирование
+        response = await geocoder.reverse([longitude, latitude])
 
-    # Проверяем успешность запроса
-    if response and 'response' in response:
-        geo_object = response['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']
-        address = geo_object['metaDataProperty']['GeocoderMetaData']['text']
-        logging.info(f'Адрес: {address}')
-        return address
-    else:
-        logging.error('Не удалось получить адрес по заданным координатам.')
+        # Проверяем успешность запроса
+        if response and 'response' in response:
+            geo_object = response['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']
+            address = geo_object['metaDataProperty']['GeocoderMetaData']['text']
+            logging.info(f'Адрес: {address}')
+            return address
+        else:
+            logging.error('Не удалось получить адрес по заданным координатам.')
+    except Exception as e:
+        logging.exception(f"Ошибка при получениии адреса: {e}")
         return None
