@@ -80,6 +80,54 @@ def create_user_id_table():
         cursor.close()
         connection.close()
 
+
+
+async def save_user_id(user_id):
+    if user_id not in await user_ids.get_all():
+        await user_ids.append(user_id)
+    """Сохраняет идентификатор пользователя в базу данных."""
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(f"INSERT INTO {user_ids_table_name} (user_id) VALUES (%s)", (user_id,))
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка сохранения пользователя в MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+def get_user_ids():
+    """Получает все идентификаторы пользователей из базы данных."""
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT DISTINCT user_id FROM {user_ids_table_name}")
+        result = cursor.fetchall()
+        return [row[0] for row in result]
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка получения пользователей из MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+async def remove_user_id(user_id):
+    await user_ids.remove(user_id)
+    """Удаляет идентификатор пользователя из базы данных."""
+    connection = connect_to_db()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(f"DELETE FROM {user_ids_table_name} WHERE user_id = %s", (user_id,))
+        connection.commit()
+    except mysql.connector.Error as err:
+        logging.error(f"Ошибка удаления пользователя из MySQL: {err}")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
 def create_last_session_table():
     """Создает таблицу для хранения последней сессии."""
     connection = connect_to_db()
@@ -138,51 +186,7 @@ def get_all_session():
         cursor.close()
         connection.close()
 
-async def save_user_id(user_id):
-    if user_id not in await user_ids.get_all():
-        await user_ids.append(user_id)
-    """Сохраняет идентификатор пользователя в базу данных."""
-    connection = connect_to_db()
-    try:
-        cursor = connection.cursor()
-        cursor.execute(f"INSERT INTO {user_ids_table_name} (user_id) VALUES (%s)", (user_id,))
-        connection.commit()
-    except mysql.connector.Error as err:
-        logging.error(f"Ошибка сохранения пользователя в MySQL: {err}")
-        raise
-    finally:
-        cursor.close()
-        connection.close()
 
-def get_user_ids():
-    """Получает все идентификаторы пользователей из базы данных."""
-    connection = connect_to_db()
-    try:
-        cursor = connection.cursor()
-        cursor.execute(f"SELECT DISTINCT user_id FROM {user_ids_table_name}")
-        result = cursor.fetchall()
-        return [row[0] for row in result]
-    except mysql.connector.Error as err:
-        logging.error(f"Ошибка получения пользователей из MySQL: {err}")
-        raise
-    finally:
-        cursor.close()
-        connection.close()
-
-async def remove_user_id(user_id):
-    await user_ids.remove(user_id)
-    """Удаляет идентификатор пользователя из базы данных."""
-    connection = connect_to_db()
-    try:
-        cursor = connection.cursor()
-        cursor.execute(f"DELETE FROM {user_ids_table_name} WHERE user_id = %s", (user_id,))
-        connection.commit()
-    except mysql.connector.Error as err:
-        logging.error(f"Ошибка удаления пользователя из MySQL: {err}")
-        raise
-    finally:
-        cursor.close()
-        connection.close()
 
 #-------------------------------------end MySQL-------------------------------------------------------
 

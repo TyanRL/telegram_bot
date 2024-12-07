@@ -1,7 +1,9 @@
 import asyncio
 from functools import partial
 import logging
+import os
 import openai
+import requests
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,7 +12,33 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from state_and_commands import add_location_button
+from state_and_commands import add_location_button, get_geolocation
+from weather import get_weather_description
+
+
+
+
+
+# Описываем доступные функции для модели:
+functions = [
+    {
+        "name": "request_geolocation",
+        "description": "Получить геолокацию пользователя",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        },
+
+        "name": "get_weather_description",
+        "description": "Получить описание погоды по геолокации пользователя.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+            },
+    }
+]
+
+
 
 # Запрос геолокации у пользователя:
 async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18,17 +46,6 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages):
     try:
-        # Описываем доступные функции для модели:
-        functions = [
-            {
-                "name": "request_geolocation",
-                "description": "Получить геолокацию пользователя",
-                "parameters": {
-                    "type": "object",
-                    "properties": {}
-                }
-            }
-        ]
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
@@ -52,6 +69,18 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 # Вызываем функцию запроса геолокации
                 await request_geolocation(update, context)
                 return None
+            if function_call and function_call.name == "get_weather_description":
+                # смотрим есть ли геолокация в для этого пользователя
+                geolocation =  get_geolocation(update.effective_user.id)
+                if geolocation is None:
+                    # Если геолокации нет, то вызываем функцию запроса геолокации
+                    await request_geolocation(update, context)
+                    return "Для получения прогноза погоды необходимо задать свою геолокацию"
+                else:
+                    # Если геолокация есть, то вызываем функцию получения погоды
+                    (attitude,longtitude)= geolocation
+                    result = get_weather_description(attitude, longtitude)
+                    return result
 
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()

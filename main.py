@@ -16,7 +16,7 @@ from aiohttp import web
 from openai import OpenAI
 
 from openai_api import get_model_answer
-from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, start
+from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_geolocation, set_info, set_session_info, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 
@@ -191,7 +191,10 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         longitude = update.message.location.longitude
         location_message = f"Твои координаты:\nШирота: {latitude}\nДолгота: {longitude}"
         history.append({"role": "system", "content": location_message})
+        set_geolocation(update.effective_user.id, latitude, longitude)
         await reply_service_text(update,location_message)
+        
+
 
 async def main():
     set_info(model_name, voice_recognition_model_name, version)
