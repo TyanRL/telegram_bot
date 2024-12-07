@@ -46,7 +46,7 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages):
     try:
-        additional_system_message=None
+        additional_system_messages=[]
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
@@ -81,13 +81,16 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     # Если геолокация есть, то вызываем функцию получения погоды
                     (attitude,longtitude)= geolocation
                     result = get_weather_description(attitude, longtitude)
-                    additional_system_message={"role": "system", "content": result}
-                    messages.append(additional_system_message)
-                    return await get_model_answer(openai_client, update, context, model_name, messages)
+                    new_system_message={"role": "system", "content": result}
+                    
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages)
+                    return answer, additional_system_messages+additional_system_messages2
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()
-        return bot_reply, additional_system_message
+        return bot_reply, additional_system_messages
 
     except Exception as e:
         # Логируем ошибки
