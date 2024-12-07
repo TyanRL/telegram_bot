@@ -44,8 +44,13 @@ functions = [
 async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_location_button(update, context)
 
-async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages):
+async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages, recursion_depth=0):
     try:
+        
+        if recursion_depth > 10:
+            logging.error("Recursion depth exceeded")
+            return None, None
+
         additional_system_messages=[]
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -85,7 +90,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages)
+                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
