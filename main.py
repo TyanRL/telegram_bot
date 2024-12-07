@@ -45,7 +45,7 @@ def get_system_message():
         "content": 
 f"""
 Вы — помощник, который отвечает на вопросы пользователей. Время по Москве — {local_time}. 
-Если в истории нет геолокации, то нужно запросить соответсвующую функцию.
+Если для ответа пользователю требуется запросить геолокацию или прогноз погоды, то нужно запросить соответсвующую функцию.
 """,
     }
     return system_message
@@ -118,7 +118,7 @@ async def send_big_text(update: Update, text_to_send):
     else:
         await reply_text(update,text_to_send)
     history = await user_histories.get(update.effective_user.id, [])
-    if len(history)==5 or len(history)==10:
+    if len(history)==8 or len(history)==15:
         await reply_service_text(update, 
 """
 Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
