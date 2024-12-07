@@ -21,7 +21,7 @@ from common_types import SafeDict
 from sql import get_admins, in_user_list
 
 
-version="4.0"
+version="4.2"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -64,11 +64,14 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         system_message= get_system_message()
         logging.info([system_message] + history)
         
-        bot_reply = await get_model_answer(openai_client, update, context, model_name, [system_message] + history)
+        bot_reply, additional_system_message = await get_model_answer(openai_client, update, context, model_name, [system_message] + history)
         
         if bot_reply is None:
             return None
 
+        # Добавляем дополнительную информацию в историю
+        if additional_system_message is not None:
+            history.append(additional_system_message)
         # Добавляем ответ бота в историю
         history.append({"role": "assistant", "content": bot_reply})
         
