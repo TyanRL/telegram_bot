@@ -73,13 +73,16 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             
             if function_call and function_call.name == "request_geolocation":
                 # Вызываем функцию запроса геолокации
+                logging.info("Вызываем функцию запроса геолокации")
                 await request_geolocation(update, context)
                 return None, None
             if function_call and function_call.name == "get_weather_description":
+                logging.info("Вызываем функцию запроса погоды")
                 # смотрим есть ли геолокация в для этого пользователя
                 geolocation =  await get_geolocation(update.effective_user.id)
                 if geolocation is None:
                     # Если геолокации нет, то вызываем функцию запроса геолокации
+                    logging.info("Геолокации нет. Вызываем функцию запроса геолокации")
                     await request_geolocation(update, context)
                     return None, None
                 else:
@@ -87,7 +90,6 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     (attitude,longtitude)= geolocation
                     result = get_weather_description(attitude, longtitude)
                     new_system_message={"role": "system", "content": result}
-                    
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                     (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
