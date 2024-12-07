@@ -75,7 +75,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 if geolocation is None:
                     # Если геолокации нет, то вызываем функцию запроса геолокации
                     await request_geolocation(update, context)
-                    return "Для получения прогноза погоды необходимо задать свою геолокацию"
+                    return None
                 else:
                     # Если геолокация есть, то вызываем функцию получения погоды
                     (attitude,longtitude)= geolocation
