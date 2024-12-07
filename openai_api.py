@@ -71,7 +71,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 return None
             if function_call and function_call.name == "get_weather_description":
                 # смотрим есть ли геолокация в для этого пользователя
-                geolocation =  get_geolocation(update.effective_user.id)
+                geolocation =  await get_geolocation(update.effective_user.id)
                 if geolocation is None:
                     # Если геолокации нет, то вызываем функцию запроса геолокации
                     await request_geolocation(update, context)

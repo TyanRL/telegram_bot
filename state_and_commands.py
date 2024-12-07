@@ -21,12 +21,12 @@ user_histories = SafeDict()
 translate_mode=SafeDict()
 user_geolocations = SafeDict()
 
-def get_geolocation(user_id):
-    return user_geolocations.get(user_id, None)
+async def get_geolocation(user_id):
+    return await user_geolocations.get(user_id, None)
 
-def set_geolocation(user_id, attitude, longitude):
+async def set_geolocation(user_id, attitude, longitude):
     geolocation = (attitude, longitude)
-    user_geolocations[user_id] = geolocation
+    await user_geolocations.set(user_id,geolocation)
 
 def get_history():
     return user_histories
