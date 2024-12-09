@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.7"
+version="5.8"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -30,7 +30,7 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
-model_name="gpt-4o"
+default_model_name="gpt-4o"
 voice_recognition_model_name="whisper-1"
 
 
@@ -44,9 +44,14 @@ def get_system_message():
         "role": "system",
         "content": 
 f"""
-Вы — помощник, который отвечает на вопросы пользователей. Время по Москве — {local_time}. 
-1. Внимательно изучи историю - если в ней уже есть геолокация, время, прогноз погоды, то эту информацию нужно использовать не вызывая функции.
-2. Если же для ответа пользователю требуется запросить геолокацию, прогноз погоды или сгенерировать картинку, и этой информации нет в истории, то нужно запросить соответсвующую функцию.
+Вы — помощник, который отвечает на вопросы пользователя. Время по Москве — {local_time}. 
+1. Если для ответа на вопрос пользователя требуется прогноз погоды, то: 
+    - внимательно изучи историю сообщений и системную информацию. Если в ней уже есть прогноз, используй его.
+    - если нет, то вызови соответствующую функцию.
+
+2. Если для ответа на вопрос пользователя требуется его гелокация, то: 
+    - внимательно изучи историю сообщений и системную информацию.Если в ней уже есть геолокация, используй ее.
+    - если нет, то вызови соответствующую функцию.
 """,
     }
     return system_message
@@ -66,7 +71,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         system_message= get_system_message()
         logging.info([system_message] + history)
         
-        bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, model_name, [system_message] + history)
+        bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, default_model_name, [system_message] + history)
         
         if bot_reply is None:
             return None
@@ -75,6 +80,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         if additional_system_messages is not None:
             for message in additional_system_messages:
                 history.append(message)
+                logging.error(f"В историю добавлена новая системная информация: {message}")
         # Добавляем ответ бота в историю
         history.append({"role": "assistant", "content": bot_reply})
         
@@ -207,7 +213,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def main():
-    set_info(model_name, voice_recognition_model_name, version)
+    set_info(default_model_name, voice_recognition_model_name, version)
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 
@@ -252,7 +258,7 @@ async def main():
     await set_webhook(application)
 
     # Запуск бота
-    logging.info(f"Bot v{version} is running. Model - {model_name}")
+    logging.info(f"Bot v{version} is running. Model - {default_model_name}")
     try:
         await asyncio.Event().wait()
     finally:
