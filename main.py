@@ -195,7 +195,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         latitude = update.message.location.latitude
         longitude = update.message.location.longitude
         address = await get_address(latitude,longitude)
-        location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude} \n Адрес: {address}"
+        location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude}\nАдрес: {address}"
         history.append({"role": "system", "content": location_message})
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await reply_service_text(update,location_message)
