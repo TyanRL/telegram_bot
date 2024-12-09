@@ -147,7 +147,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     return answer, additional_system_messages+additional_system_messages2
             if function_call and function_call.name == "generate_image":
                 function_args = response.choices[0].message.function_call.arguments
-                logging.info(f"Вызываем функцию генерации изображения. Аргументы: {function_args}")
+                logging.info(f"Вызываем функцию генерации изображения. Аргументы: {function_args}, Тип: {type(function_args)}")
 
                 image_url = generate_image(function_args["prompt"], function_args["style"])
                 if image_url is None:
