@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="4.4"
+version="4.5"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -199,7 +199,8 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         history.append({"role": "system", "content": location_message})
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await reply_service_text(update,location_message)
-        await handle_message_inner(update, context, "Продолжай.")
+        await handle_message_inner(update, context, "Получена новая системная информация, внимательно проанализируйте историю и постарайтесь ответить на вопрос")
+
         
 
 
