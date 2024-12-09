@@ -35,6 +35,24 @@ functions = [
             "type": "object",
             "properties": {}
             },
+
+        "name": "generate_image",
+        "description": "Сгенерировать изображение по запросу пользователя.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                 "prompt": {
+                    "type": "string",
+                    "description": "Запрос пользователя по которому сгенерируется картинка"
+                    },
+                    "style": {
+                    "type": "string",
+                    "enum": ["vivid", "natural"],
+                    "description": "Стиль изображения 'vivid' или 'natural'"
+                    },  
+
+                }
+            },
     }
 ]
 
@@ -43,6 +61,32 @@ functions = [
 # Запрос геолокации у пользователя:
 async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_location_button(update, context)
+
+# 
+def generate_image(prompt:str, style:str):
+    # TODO: Сделать проверку на то что пользователь ввел текст
+    if prompt is None or prompt == "":
+        logging.info("Пустой запрос на генерацию изображения")
+        return
+    
+    if style  != 'vivid' or style!= 'natural':
+        style='vivid'
+
+    response = openai.Image.create(
+    model='dall-e-3',
+    prompt=prompt,
+    n=1,
+    size='1024x1024',
+    quality='hd',  # Опционально: 'standard' или 'hd'
+    style=style  # Опционально: 'vivid' или 'natural'
+    )
+    image_url = response['data'][0]['url']
+
+    # Отправка изображения пользователю
+    return image_url
+
+    
+
 
 async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages, recursion_depth=0):
     try:
@@ -94,6 +138,19 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     messages.append(new_system_message)
                     (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2
+            if function_call and function_call.name == "generate_image":
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию генерации изображения. \nPrompt:{function_args["prompt"]}\nstyle:{function_args["style"]}\n")
+                image_url = generate_image(function_args["prompt"], function_args["style"])
+                if image_url is None:
+                    bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
+                    return bot_reply, additional_system_messages
+                else:
+                    # Если генерация прошла успешно, то отправляем пользователю картинку
+                    await update.message.reply_photo(photo=image_url)
+                    bot_reply = "Я сделал :)"
+                    return bot_reply, additional_system_messages
+
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()
