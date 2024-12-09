@@ -120,9 +120,10 @@ async def send_big_text(update: Update, text_to_send):
     history = await user_histories.get(update.effective_user.id, [])
     if len(history)==8 or len(history)==15:
         await reply_service_text(update, 
-"""
+f"""
 Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
-Бот в своих ответах учитывает предыдущие сообщения.
+Бот в своих ответах учитывает предыдущие {max_history_length} сообщений.
+Это было {len(history)} сообщение. 
 """
 )
 
