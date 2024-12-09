@@ -65,8 +65,8 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # 
 def generate_image(prompt:str, style:str):
+    response = None
     try:
-        
         if prompt is None or prompt == "":
             logging.info("Пустой запрос на генерацию изображения")
             return
@@ -82,9 +82,7 @@ def generate_image(prompt:str, style:str):
             quality='hd',  # Опционально: 'standard' или 'hd'
             style=style  # Опционально: 'vivid' или 'natural'
             )
-
-        response_dict = json.loads(response)
-        image_url = response_dict['data'][0]['url']
+        image_url = response['data'][0]['url']
     except Exception as e:
         logging.info(f"Response: {str(response)}")
         logging.error("Ошибка при генерации изображения: " + str(e))
