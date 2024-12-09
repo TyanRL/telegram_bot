@@ -21,7 +21,7 @@ from weather import get_weather_description
 
 
 # Описываем доступные функции для модели:
-[
+functions=[
     {
         "name": "request_geolocation",
         "description": "Получить геолокацию пользователя",
