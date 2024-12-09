@@ -173,7 +173,7 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if in_user_list(user):
+    if await in_user_list(user):
     
         if version == "":
             await reply_service_text(update,"Нет данных.")
