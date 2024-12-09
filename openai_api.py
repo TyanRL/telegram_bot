@@ -82,7 +82,11 @@ def generate_image(openai_client, prompt:str, style:str):
             quality='hd',  # Опционально: 'standard' или 'hd'
             style=style  # Опционально: 'vivid' или 'natural'
             )
-        image_url = response['data'][0]['url']
+        # Получаем первый объект изображения из списка data
+        image = response.data[0]
+
+        # Извлекаем URL изображения
+        image_url = image.url
     except Exception as e:
         logging.info(f"Response: {str(response)}")
         logging.error("Ошибка при генерации изображения: " + str(e))
