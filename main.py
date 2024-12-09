@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="4.5"
+version="4.6"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -45,7 +45,7 @@ def get_system_message():
         "content": 
 f"""
 Вы — помощник, который отвечает на вопросы пользователей. Время по Москве — {local_time}. 
-Если для ответа пользователю требуется запросить геолокацию или прогноз погоды, то нужно запросить соответсвующую функцию.
+Если для ответа пользователю требуется запросить геолокацию, прогноз погоды или сгенерировать картинку, то нужно запросить соответсвующую функцию.
 """,
     }
     return system_message
