@@ -79,7 +79,7 @@ def generate_image(openai_client, prompt:str, style:str):
             prompt=prompt,
             n=1,
             size='1024x1024',
-            quality='hd',  # Опционально: 'standard' или 'hd'
+            #quality='hd',  # Опционально: 'standard' или 'hd'
             style=style  # Опционально: 'vivid' или 'natural'
             )
         # Получаем первый объект изображения из списка data
