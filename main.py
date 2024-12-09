@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.10"
+version="5.11"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -82,7 +82,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         if additional_system_messages is not None:
             for message in additional_system_messages:
                 history.append(message)
-                logging.error(f"В историю добавлена новая системная информация: {message}")
+                logging.info(f"В историю добавлена новая системная информация: {message}")
         # Добавляем ответ бота в историю
         history.append({"role": "assistant", "content": bot_reply})
         
@@ -209,7 +209,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         history.append({"role": "system", "content": location_message})
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await reply_service_text(update,location_message)
-        await handle_message_inner(update, context, "Получена новая системная информация, внимательно проанализируйте историю и постарайтесь ответить на вопрос")
+        await handle_message_inner(update, context, "Получена новая системная информация, внимательно проанализируйте историю и постарайтесь ответить на вопрос или вызви следующую функцию")
 
         
 
