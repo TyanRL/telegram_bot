@@ -64,7 +64,7 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
     await add_location_button(update, context)
 
 # 
-def generate_image(prompt:str, style:str):
+def generate_image(openai_client, prompt:str, style:str):
     response = None
     try:
         if prompt is None or prompt == "":
@@ -74,7 +74,7 @@ def generate_image(prompt:str, style:str):
         if style  != 'vivid' or style!= 'natural':
             style='vivid'
 
-        response = openai.Image.create(
+        response = openai_client.images.generate(
             model='dall-e-3',
             prompt=prompt,
             n=1,
@@ -147,7 +147,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию генерации изображения. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
-                image_url = generate_image(function_args_dict["prompt"], function_args_dict["style"])
+                image_url = generate_image(openai_client, function_args_dict["prompt"], function_args_dict["style"])
                 if image_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
                     return bot_reply, additional_system_messages
