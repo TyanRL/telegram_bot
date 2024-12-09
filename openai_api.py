@@ -21,41 +21,43 @@ from weather import get_weather_description
 
 
 # Описываем доступные функции для модели:
-functions = [
+[
     {
         "name": "request_geolocation",
         "description": "Получить геолокацию пользователя",
         "parameters": {
             "type": "object",
             "properties": {}
-        },
-
+        }
+    },
+    {
         "name": "get_weather_description",
         "description": "Получить прогноз погоды на текущее время. Не нужно спрашивать пользователя его геолокацию",
         "parameters": {
             "type": "object",
             "properties": {}
-            },
-
+        }
+    },
+    {
         "name": "generate_image",
         "description": "Сгенерировать изображение по запросу пользователя.",
         "parameters": {
             "type": "object",
             "properties": {
-                 "prompt": {
+                "prompt": {
                     "type": "string",
-                    "description": "Запрос пользователя по которому сгенерируется картинка"
-                    },
-                    "style": {
+                    "description": "Запрос пользователя, по которому сгенерируется картинка"
+                },
+                "style": {
                     "type": "string",
                     "enum": ["vivid", "natural"],
-                    "description": "Стиль изображения 'vivid' или 'natural'"
-                    },  
-
+                    "description": "Стиль изображения: 'vivid' или 'natural'"
                 }
-            },
+            }
+        }
     }
 ]
+
 
 
 
