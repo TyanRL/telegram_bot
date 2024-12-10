@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.18"
+version="5.19"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -82,7 +82,8 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                 history.append(message)
                 logging.info(f"В историю добавлена новая системная информация: {message}")
         # Добавляем ответ бота в историю
-        history.append({"role": "assistant", "content": bot_reply})
+        if bot_reply is not None:
+            history.append({"role": "assistant", "content": bot_reply})
         
         # Обновляем историю пользователя
         await user_histories.set(update.effective_user.id, history)
@@ -198,17 +199,20 @@ async def set_webhook(application):
 
 # Обработка геолокации
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.location:
-        history = await user_histories.get(update.effective_user.id, [])
-        latitude = update.message.location.latitude
-        longitude = update.message.location.longitude
-        address = await get_address(latitude,longitude)
-        location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude}\nАдрес: {address}"
-        history.append({"role": "system", "content": location_message})
-        await set_geolocation(update.effective_user.id, latitude, longitude)
-        await user_histories.set(update.effective_user.id, history)
-        await reply_service_text(update,location_message)
-        await handle_message_inner(update, context, "Геолокация отправлена. Внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
+    try:
+        if update.message.location:
+            history = await user_histories.get(update.effective_user.id, [])
+            latitude = update.message.location.latitude
+            longitude = update.message.location.longitude
+            address = await get_address(latitude,longitude)
+            location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude}\nАдрес: {address}"
+            history.append({"role": "system", "content": location_message})
+            await set_geolocation(update.effective_user.id, latitude, longitude)
+            await user_histories.set(update.effective_user.id, history)
+            await reply_service_text(update,location_message)
+            await handle_message_inner(update, context, "Геолокация отправлена. Внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
+    except Exception as e:
+        logging.error(f"Ошибка в обработчике геолокации: {e}")
 
 
         
