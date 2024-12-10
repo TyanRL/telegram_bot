@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.15"
+version="5.16"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -73,6 +73,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         system_message= get_system_message()
         logging.info([system_message] + history)
         
+        
         bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, default_model_name, [system_message] + history)
         
         if bot_reply is None:
@@ -88,6 +89,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         
         # Обновляем историю пользователя
         await user_histories.set(update.effective_user.id, history)
+        logging.info(f"История пользователя обновлена: {history}")
         
         return bot_reply
     except Exception as e:
@@ -209,13 +211,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await user_histories.set(update.effective_user.id, history)
         await reply_service_text(update,location_message)
-        last_user_message=None
-        for message in reversed(history):
-            if message["role"] == "user":
-                last_user_message = message["content"]
-        if last_user_message:
-            await handle_message_inner(update, context, f"Геолокация отправлена. Повторяю вопрос: {last_user_message}")    
-        await handle_message_inner(update, context, "Отправлена , внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
+        await handle_message_inner(update, context, "Геолокация отправлена. Внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
 
 
         
