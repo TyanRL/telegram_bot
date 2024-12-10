@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.17"
+version="5.18"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -76,9 +76,6 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         
         bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, default_model_name, [system_message] + history)
         
-        if bot_reply is None:
-            return None
-
         # Добавляем дополнительную информацию в историю
         if additional_system_messages is not None:
             for message in additional_system_messages:
