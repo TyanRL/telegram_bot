@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.14"
+version="5.15"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -129,8 +129,7 @@ async def send_big_text(update: Update, text_to_send):
     history = await user_histories.get(update.effective_user.id, [])
     if len(history)==8 or len(history)==15:
         await reply_service_text(update, 
-f"""
-Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
+f"""Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
 Бот в своих ответах учитывает предыдущие {max_history_length} сообщений.
 Это было {len(history)} сообщение. 
 """
@@ -210,7 +209,13 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await set_geolocation(update.effective_user.id, latitude, longitude)
         await user_histories.set(update.effective_user.id, history)
         await reply_service_text(update,location_message)
-        await handle_message_inner(update, context, "Отправлена новая системная информация, внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
+        last_user_message=None
+        for message in reversed(history):
+            if message["role"] == "user":
+                last_user_message = message["content"]
+        if last_user_message:
+            await handle_message_inner(update, context, f"Геолокация отправлена. Повторяю вопрос: {last_user_message}")    
+        await handle_message_inner(update, context, "Отправлена , внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
 
 
         
