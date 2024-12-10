@@ -75,6 +75,7 @@ async def reply_service_text(update: Update, message:str):
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await user_histories.set(user.id, [])
+    await user_geolocations.set(user.id,None)
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logging.info(f"Context for user {user.id} is reset")
 
