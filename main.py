@@ -22,7 +22,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.19"
+version="5.20"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -127,7 +127,7 @@ async def send_big_text(update: Update, text_to_send):
     else:
         await reply_text(update,text_to_send)
     history = await user_histories.get(update.effective_user.id, [])
-    if len(history)==8 or len(history)==15:
+    if len(history)==8 or len(history)==14:
         await reply_service_text(update, 
 f"""Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
 Бот в своих ответах учитывает предыдущие {max_history_length} сообщений.
