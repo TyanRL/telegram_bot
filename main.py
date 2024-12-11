@@ -242,7 +242,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         # Получаем файл изображения
-        photo_file = update.message.photo[-1].get_file()
+        photo_file = await update.message.photo[-1].get_file()
         photo_path = f'user_{update.effective_user.id}_image.jpg'
         photo_file.download(photo_path)
 
