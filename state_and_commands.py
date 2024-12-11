@@ -20,6 +20,12 @@ from telegram.helpers import escape_markdown
 user_histories = SafeDict()
 translate_mode=SafeDict()
 user_geolocations = SafeDict()
+user_image = SafeDict()
+
+async def set_user_image(user_id, image:str):
+    await user_image.set(user_id,image)
+async def get_user_image(user_id):
+    return await user_image.get(user_id, None)
 
 async def get_geolocation(user_id):
     return await user_geolocations.get(user_id, None)

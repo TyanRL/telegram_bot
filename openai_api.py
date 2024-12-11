@@ -107,6 +107,8 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             return None, None
 
         additional_system_messages=[]
+       
+
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,

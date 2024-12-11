@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import mimetypes
 import os
 import logging
 import tempfile
@@ -16,13 +18,13 @@ from aiohttp import web
 from openai import OpenAI
 
 from openai_api import get_model_answer
-from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, info, list_users, remove_user, reply_service_text, reply_text, reset, set_geolocation, set_info, set_session_info, start
+from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_geolocation, set_info, set_session_info, set_user_image, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="5.20"
+version="6.0"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -65,11 +67,34 @@ user_histories=get_history()
 administrators_ids = get_admins()
 
 async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
-
-    # Получаем или создаем историю сообщений для пользователя
-    history = await get_history(update.effective_user.id, user_message)
-    
     try:
+        imgage_dict = await get_user_image(update.effective_user.id)
+        if imgage_dict is not None:
+            try:
+                # Итоговая строка для использования
+                img_type=imgage_dict["image_type"]
+                img_b64_str = imgage_dict["image"]
+                history = await user_histories.get(update.effective_user.id, [])
+                history.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_message},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{img_type};base64,{img_b64_str}"},
+                        },
+                    ],
+                })
+            except Exception as e:
+                logging.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
+                return "Извините, произошла ошибка при обработке вашего запроса c изображением."
+            finally:
+                await set_user_image(update.effective_user.id, None)
+        else:
+            # Получаем или создаем историю сообщений для пользователя
+            history = await get_history(update.effective_user.id, user_message)
+    
+   
         system_message= get_system_message()
         logging.info([system_message] + history)
         
@@ -214,8 +239,32 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logging.error(f"Ошибка в обработчике геолокации: {e}")
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        # Получаем файл изображения
+        photo_file = update.message.photo[-1].get_file()
+        photo_path = f'user_{update.effective_user.id}_image.jpg'
+        photo_file.download(photo_path)
 
-        
+        # Определяем MIME-тип
+        img_type, _ = mimetypes.guess_type(photo_path)
+        if img_type is None:
+            img_type = "application/octet-stream"  # На случай, если тип определить не удалось
+
+        # Кодируем изображение в base64 для OpenAI
+        with open(photo_path, 'rb') as image_file:
+            image_content = image_file.read()
+            # Преобразование в Base64
+            img_b64_bytes = base64.b64encode(image_content)
+            # Преобразование в строку
+            img_b64_str = img_b64_bytes.decode("utf-8")
+            await set_user_image(update.effective_user.id, {"image_type": img_type, "image":img_b64_str})
+
+        await reply_service_text(update,"Изображение загружено, задайте вопрос по нему")
+    except Exception as e:
+        await reply_service_text(update,"Ошибка при загрузке изображения")
+        logging.error(f"Ошибка в обработчике изображений: {e}")
+
 
 
 async def main():
@@ -227,6 +276,7 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
     application.add_handler(MessageHandler(filters.LOCATION, location_handler))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     # Добавление обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list", list_users))
@@ -236,6 +286,7 @@ async def main():
     application.add_handler(CommandHandler("last_session", get_last_session))
     application.add_handler(CommandHandler("info", info))
     application.add_handler(CommandHandler("location", add_location_button))
+    
     
     
 
