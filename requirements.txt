@@ -6,4 +6,3 @@ mysql-connector-python==9.1.0
 ymaps==1.3
 aiohttp
 requests
-mimetypes
