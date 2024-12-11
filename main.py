@@ -244,7 +244,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Получаем файл изображения
         photo_file = await update.message.photo[-1].get_file()
         photo_path = f'user_{update.effective_user.id}_image.jpg'
-        photo_file.download(photo_path)
+        await photo_file.download_to_drive(photo_path)
 
         # Определяем MIME-тип
         img_type, _ = mimetypes.guess_type(photo_path)
