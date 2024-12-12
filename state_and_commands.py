@@ -19,20 +19,13 @@ from telegram.helpers import escape_markdown
 
 user_histories = SafeDict()
 translate_mode=SafeDict()
-user_geolocations = SafeDict()
+
 user_image = SafeDict()
 
 async def set_user_image(user_id, image:str):
     await user_image.set(user_id,image)
 async def get_user_image(user_id):
     return await user_image.get(user_id, None)
-
-async def get_geolocation(user_id):
-    return await user_geolocations.get(user_id, None)
-
-async def set_geolocation(user_id, attitude, longitude):
-    geolocation = (attitude, longitude)
-    await user_geolocations.set(user_id,geolocation)
 
 def get_history():
     return user_histories
@@ -81,7 +74,6 @@ async def reply_service_text(update: Update, message:str):
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await user_histories.set(user.id, [])
-    await user_geolocations.set(user.id,None)
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logging.info(f"Context for user {user.id} is reset")
 

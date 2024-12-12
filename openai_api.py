@@ -34,17 +34,32 @@ functions=[
     {
         "name": "get_weather_description",
         "description": "Получить прогноз погоды на текущее время.",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
+        "properties": {
+                "lattitude": {
+                    "type": "float",
+                    "description": "Широта."
+                },
+                "longttitude": {
+                    "type": "float",
+                    "description": "Долгота."
+                }
+            }
     },
     {
         "name": "get_weekly_forecast",
         "description": "Получить прогноз погоды на неделю вперед.",
         "parameters": {
             "type": "object",
-            "properties": {}
+            "properties": {
+                "lattitude": {
+                    "type": "float",
+                    "description": "Широта."
+                },
+                "longttitude": {
+                    "type": "float",
+                    "description": "Долгота."
+                }
+            }
         }
     },
     {
@@ -158,27 +173,21 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 await request_geolocation(update, context)
                 return None, None
             if function_call and (function_call.name == "get_weather_description" or function_call.name == "get_weekly_forecast"):
-                logging.info("Вызываем функцию запроса погоды")
-                # смотрим есть ли геолокация в для этого пользователя
-                geolocation =  await get_geolocation(update.effective_user.id)
-                if geolocation is None:
-                    # Если геолокации нет, то вызываем функцию запроса геолокации
-                    logging.info("Геолокации нет. Вызываем функцию запроса геолокации")
-                    await request_geolocation(update, context)
-                    return None, None
-                else:
-                    (attitude,longtitude)= geolocation
-                    # Если геолокация есть, то вызываем функцию получения погоды
-                    if function_call.name == "get_weather_description":
-                        result = get_weather_description2(attitude, longtitude)
-                    elif function_call.name == "get_weekly_forecast":
-                        result = get_weekly_forecast(attitude, longtitude)
+                logging.info(f"Вызываем функцию запроса погоды. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                lattitude=function_args_dict["lattitude"]
+                longtitude=function_args_dict["longttitude"]
+                # Если геолокация есть, то вызываем функцию получения погоды
+                if function_call.name == "get_weather_description":
+                    result = get_weather_description2(lattitude, longtitude)
+                elif function_call.name == "get_weekly_forecast":
+                    result = get_weekly_forecast(lattitude, longtitude)
                     
-                    new_system_message={"role": "system", "content": result}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
-                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
-                    return answer, additional_system_messages+additional_system_messages2
+                new_system_message={"role": "system", "content": result}
+                additional_system_messages.append(new_system_message)
+                messages.append(new_system_message)
+                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
+                return answer, additional_system_messages+additional_system_messages2
 
 
             if function_call and function_call.name == "generate_image":
