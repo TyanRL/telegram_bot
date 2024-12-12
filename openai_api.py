@@ -200,7 +200,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 logging.info(f"Вызываем функцию получения геолокации по адресу. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 address=function_args_dict["address"]
-                geoloc = get_location_by_address(openai_client, address)
+                geoloc = get_location_by_address(address)
                 if geoloc is None:
                     bot_reply = "Не удалось получить геолокацию."
                     return bot_reply, additional_system_messages
