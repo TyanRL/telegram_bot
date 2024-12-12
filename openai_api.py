@@ -18,6 +18,7 @@ from weather import get_weather_description, get_weather_description2, get_weekl
 from yandex_maps import get_location_by_address
 
 
+MAXIMUM_RECURSION_ANSWER_DEPTH = 10
 
 
 
@@ -140,8 +141,9 @@ def generate_image(openai_client, prompt:str, style:str):
 
 async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages, recursion_depth=0):
     try:
-        
-        if recursion_depth > 10:
+        logging.info(f"Запрос к модели: {str(messages)}, глубина рекурсии {recursion_depth}")   
+
+        if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
             logging.error("Recursion depth exceeded")
             return None, None
 
@@ -216,6 +218,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 else:
                     (latitude, longitude) = geoloc
                     result = f"Геолокация {address} установлена. Широта: {latitude}, Долгота: {longitude}"
+                    logging.info(result)
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
