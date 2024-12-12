@@ -1,3 +1,5 @@
+
+from datetime import datetime, timedelta
 import os
 import requests
 
@@ -40,12 +42,30 @@ weather_codes = {
 def get_weather_description_by_code(code):
     return weather_codes.get(code, "Неизвестный код погоды")
 
+def get_weekly_forecast(latitude, longitude):
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,  # Широта
+        "longitude": longitude,  # Долгота
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,relative_humidity_2m_max,relative_humidity_2m_min",  # Данные для прогноза
+        "timezone": "auto",  # Временная зона
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Проверка на ошибки HTTP
+        forecast_data = response.json()
+        return forecast_data
+    except requests.exceptions.RequestException as e:
+        return(f"Ошибка при запросе погоды: {e}")
+
 def get_weather_by_coordinates2(latitude, longitude):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": latitude,  # Широта
         "longitude": longitude,  # Долгота
         "current_weather": True,  # Запрос текущей погоды
+        "hourly": "relative_humidity_2m",  # Добавляем влажность
     }
 
     try:
@@ -54,7 +74,7 @@ def get_weather_by_coordinates2(latitude, longitude):
         weather_data = response.json()
         return weather_data
     except requests.exceptions.RequestException as e:
-        print(f"Ошибка при запросе погоды: {e}")
+        return(f"Ошибка при запросе погоды: {e}")
 
 def get_weather_by_coordinates(latitude, longitude):
     """
@@ -109,6 +129,14 @@ def get_weather_description(latitude, longitude):
     # Возврат сообщения с описанием погоды
     return result
 
+def round_time_to_hour(time_str):
+    """Округляет время до ближайшего часа."""
+    time = datetime.fromisoformat(time_str)
+    rounded_time = time.replace(minute=0, second=0, microsecond=0)
+    if time.minute >= 30:  # Если больше 30 минут, округляем вверх
+        rounded_time += timedelta(hours=1)
+    return rounded_time.isoformat()
+
 def get_weather_description2(latitude, longitude):
     weather_data = get_weather_by_coordinates2(latitude, longitude)
     # Вывод результата
@@ -116,15 +144,36 @@ def get_weather_description2(latitude, longitude):
         result=f"Ошибка: {weather_data['error']}"
     else:
         current = weather_data.get("current_weather", {})
+
+        # Получаем влажность из hourly данных
+        hourly_data = weather_data.get("hourly", {})
+        humidity_values = hourly_data.get("relative_humidity_2m", [])
+        times = hourly_data.get("time", [])
+
+        # Найти текущую влажность, соответствующую времени current_weather
+        current_time = current.get("time")
+        current_time=round_time_to_hour(current_time)
+        if current_time.endswith(':00'):
+            current_time = current_time[:-3]
+        if current_time and times and humidity_values:
+            try:
+                humidity_index = times.index(current_time)
+                current_humidity = humidity_values[humidity_index]
+            except ValueError:
+                current_humidity = "неизвестно"
+        else:
+            current_humidity = "неизвестно"
+
+
         weather_code = current["weathercode"]
         description = get_weather_description_by_code(weather_code)
         t= current.get("temperature", "нет данных")
-        feels_like = current.get("feelslike", "нет данных")
+        
         #pressure = current.get("pressure", "нет данных")
         #humidity = current.get("humidity", "нет данных")
         wind_speed  = current.get("windspeed", "нет данных")
 
-        result = f"Погода: {description}, температура: {t}°C, скорость ветра {wind_speed} км/ч."
+        result = f"Погода: {description}, температура: {t}°C, скорость ветра {wind_speed} км/ч, влажность {current_humidity}."
     # Возврат сообщения с описанием погоды
     return result
 
