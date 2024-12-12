@@ -33,9 +33,11 @@ functions=[
         }
     },
     {
-        "name": "get_weather_description",
-        "description": "Получить прогноз погоды на текущее время.",
-        "properties": {
+       "name": "get_weather_description",
+        "description": "Получить текущую погоду.",
+        "parameters": {
+            "type": "object",
+            "properties": {
                 "latitude": {
                     "type": "number",
                     "description": "Широта."
@@ -44,7 +46,9 @@ functions=[
                     "type": "number",
                     "description": "Долгота."
                 }
-            }
+            },
+            "required": ["latitude", "longitude"]
+        }
     },
     {
         "name": "get_weekly_forecast",
@@ -60,7 +64,8 @@ functions=[
                     "type": "number",
                     "description": "Долгота."
                 }
-            }
+            },
+            "required": ["latitude", "longitude"]
         }
     },
     {
