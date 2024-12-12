@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 from state_and_commands import add_location_button, get_geolocation
-from weather import get_weather_description
+from weather import get_weather_description, get_weather_description2
 
 
 
@@ -145,7 +145,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 else:
                     # Если геолокация есть, то вызываем функцию получения погоды
                     (attitude,longtitude)= geolocation
-                    result = get_weather_description(attitude, longtitude)
+                    result = get_weather_description2(attitude, longtitude)
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
