@@ -18,7 +18,7 @@ from aiohttp import web
 from openai import OpenAI
 
 from openai_api import get_model_answer
-from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_geolocation, set_info, set_session_info, set_user_image, start
+from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, set_user_image, start
 from common_types import SafeDict
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
@@ -232,7 +232,6 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             address = await get_address(latitude,longitude)
             location_message = f"Твои координаты: Широта: {latitude} Долгота: {longitude}\nАдрес: {address}"
             history.append({"role": "system", "content": location_message})
-            await set_geolocation(update.effective_user.id, latitude, longitude)
             await user_histories.set(update.effective_user.id, history)
             await reply_service_text(update,location_message)
             await handle_message_inner(update, context, "Геолокация отправлена. Внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
