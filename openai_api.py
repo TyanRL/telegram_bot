@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 from state_and_commands import add_location_button
-from weather import get_weather_description, get_weather_description2, get_weekly_forecast
+from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
 
 
