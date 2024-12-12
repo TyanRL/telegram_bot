@@ -15,6 +15,7 @@ from telegram.ext import (
 )
 from state_and_commands import add_location_button, get_geolocation
 from weather import get_weather_description, get_weather_description2, get_weekly_forecast
+from yandex_maps import get_location_by_address
 
 
 
@@ -46,6 +47,21 @@ functions=[
             "properties": {}
         }
     },
+    {
+        "name": "get_location_by_address",
+        "description": "Получить широту и долготу по адресу или названию местности.",
+
+       "parameters": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "description": "Адрес иил название местности по которому нужно получить геолокацию."
+                },
+            }
+        }
+    },
+
     {
         "name": "generate_image",
         "description": "Сгенерировать изображение по запросу пользователя.",
@@ -178,6 +194,25 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     await update.message.reply_photo(photo=image_url)
                     bot_reply = "Я сделал :)"
                     return bot_reply, additional_system_messages
+            
+            if function_call and function_call.name == "get_location_by_address":
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию получения геолокации по адресу. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                address=function_args_dict["address"]
+                geoloc = get_location_by_address(openai_client, address)
+                if geoloc is None:
+                    bot_reply = "Не удалось получить геолокацию."
+                    return bot_reply, additional_system_messages
+                else:
+                    (lattitude, longitude) = geoloc
+                    result = f"Геолокация {address} установлена. Широта: {lattitude}, Долгота: {longitude}"
+                    new_system_message={"role": "system", "content": result}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
+                    return answer, additional_system_messages+additional_system_messages2
+
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
