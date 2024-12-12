@@ -141,7 +141,7 @@ def generate_image(openai_client, prompt:str, style:str):
 
 async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages, recursion_depth=0):
     try:
-        logging.info(f"Запрос к модели: {str(messages)}, глубина рекурсии {recursion_depth}")   
+        logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
         if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
             logging.error("Recursion depth exceeded")
@@ -175,6 +175,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 await request_geolocation(update, context)
                 return None, None
             if function_call and (function_call.name == "get_weather_description" or function_call.name == "get_weekly_forecast"):
+                function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию запроса погоды. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 latitude=function_args_dict["latitude"]
