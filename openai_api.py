@@ -36,11 +36,11 @@ functions=[
         "description": "Получить прогноз погоды на текущее время.",
         "properties": {
                 "latitude": {
-                    "type": "float",
+                    "type": "number",
                     "description": "Широта."
                 },
                 "longitude": {
-                    "type": "float",
+                    "type": "number",
                     "description": "Долгота."
                 }
             }
@@ -52,11 +52,11 @@ functions=[
             "type": "object",
             "properties": {
                 "latitude": {
-                    "type": "float",
+                    "type": "number",
                     "description": "Широта."
                 },
                 "longitude": {
-                    "type": "float",
+                    "type": "number",
                     "description": "Долгота."
                 }
             }
