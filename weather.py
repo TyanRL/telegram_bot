@@ -42,6 +42,21 @@ weather_codes = {
 def get_weather_description_by_code(code):
     return weather_codes.get(code, "Неизвестный код погоды")
 
+def dict_to_markdown(d, indent=0):
+    result = []
+    for key, value in d.items():
+        indentation = '  ' * indent
+        if isinstance(value, dict):
+            result.append(f"{indentation}## {key}")
+            result.append(dict_to_markdown(value, indent + 1))
+        elif isinstance(value, list):
+            result.append(f"{indentation}### {key}")
+            for item in value:
+                result.append(f"{indentation}- {item}")
+        else:
+            result.append(f"{indentation}- **{key}**: {value}")
+    return "\n".join(result)
+
 def get_weekly_forecast(latitude, longitude):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -55,9 +70,11 @@ def get_weekly_forecast(latitude, longitude):
         response = requests.get(url, params=params)
         response.raise_for_status()  # Проверка на ошибки HTTP
         forecast_data = response.json()
-        return forecast_data
+        return dict_to_markdown(forecast_data)
     except requests.exceptions.RequestException as e:
         return(f"Ошибка при запросе погоды: {e}")
+
+
 
 def get_weather_by_coordinates2(latitude, longitude):
     url = "https://api.open-meteo.com/v1/forecast"
