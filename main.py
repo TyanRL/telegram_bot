@@ -17,14 +17,13 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from openai_api import get_model_answer
-from state_and_commands import add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_info, set_session_info, set_user_image, start
-from common_types import SafeDict
+from openai_api import get_model_answer, transcribe_audio
+from state_and_commands import  OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_bot_version, set_session_info, set_user_image, start
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="8.9"
+version="9.0"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -32,8 +31,6 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
-default_model_name="gpt-4o"
-voice_recognition_model_name="whisper-1"
 
 
 # URL вебхука
@@ -99,7 +96,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         logging.info([system_message] + history)
         
         
-        bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, default_model_name, [system_message] + history)
+        bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, [system_message] + history)
         
         # Добавляем дополнительную информацию в историю
         if additional_system_messages is not None:
@@ -199,11 +196,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         try:
             # Распознавание речи с использованием OpenAI
-            transcription = openai_client.audio.transcriptions.create(
-                            model=voice_recognition_model_name,
-                            file=open(temp_file.name, 'rb')
-                            )
-            recognized_text=transcription.text
+            recognized_text=transcribe_audio(openai_client,temp_file.name)
             
             if recognized_text=="":
                  await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
@@ -267,7 +260,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def main():
-    set_info(default_model_name, voice_recognition_model_name, version)
+    set_bot_version(version)
     # Инициализация приложения
     application = ApplicationBuilder().token(telegram_token).build()
 
@@ -314,7 +307,7 @@ async def main():
     await set_telegram_webhook(application)
 
     # Запуск бота
-    logging.info(f"Bot v{version} is running. Model - {default_model_name}")
+    logging.info(f"Bot v{version} is running. DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
     try:
         await asyncio.Event().wait()
     finally:

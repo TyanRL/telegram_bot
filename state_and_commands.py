@@ -1,5 +1,6 @@
 
 import datetime
+from enum import Enum, unique
 import logging
 from zoneinfo import ZoneInfo
 
@@ -15,12 +16,37 @@ from telegram.ext import (
 from common_types import SafeDict
 from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
 from telegram.helpers import escape_markdown
+@unique
+class OpenAI_Models(Enum):
+    DEFAULT_MODEL="gpt-4o"
+    O1_MINI ="o1-mini"
 
 
 user_histories = SafeDict()
 translate_mode=SafeDict()
 
 user_image = SafeDict()
+user_model = SafeDict()
+
+# получает название модели в виде enum из строки
+def get_OpenAI_Models(model: str) -> OpenAI_Models:
+    # Проверка на наличие модели в перечислении по значению
+    for m in OpenAI_Models:
+        if m.value == model:
+            return m
+    # Если не найдено, возвращается модель по умолчанию
+    return OpenAI_Models.DEFAULT_MODEL
+
+# сохраняет название модели в строковом виде
+async def set_user_model(user_id, model:OpenAI_Models):
+    await user_model.set(user_id, model.value)
+# получает название модели в строковом виде
+async def get_user_model(user_id):
+    model = await user_model.get(user_id, None)
+    if model is None:
+        return OpenAI_Models.DEFAULT_MODEL.value
+    else:
+        return model
 
 async def set_user_image(user_id, image:str):
     await user_image.set(user_id,image)
@@ -47,17 +73,15 @@ async def set_translate_mode(user) -> None:
     translate_mode
 
 
-model_name=""
-voice_recognition_model_name=""
+voice_recognition_model_name="whisper-1"
+def get_voice_recognition_model():
+    return voice_recognition_model_name
+
 version=""
 
-def set_info(openai_model_name: str, vr_model_name: str, bot_version: str) -> None:
-    global model_name
-    global voice_recognition_model_name
+async def set_bot_version(bot_version: str) -> None:
     global version
     version = bot_version
-    model_name = openai_model_name
-    voice_recognition_model_name = vr_model_name
 
 async def reply_text(update: Update, message:str):
     escaped_text = escape_markdown(message, version=2)
@@ -74,6 +98,7 @@ async def reply_service_text(update: Update, message:str):
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await user_histories.set(user.id, [])
+    await user_model.set(user.id, None)
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logging.info(f"Context for user {user.id} is reset")
 
@@ -173,11 +198,11 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if await in_user_list(user):
-    
         if version == "":
             await reply_service_text(update,"Нет данных.")
         else:
-            await reply_service_text(update,f"Версия бота: {version}, модель: {model_name}, модель для распознавания голоса: {voice_recognition_model_name}")
+            model = await get_user_model(update.effective_user.id)
+            await reply_service_text(update,f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}")
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 

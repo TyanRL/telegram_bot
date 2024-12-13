@@ -13,7 +13,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from state_and_commands import add_location_button
+from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
 
@@ -100,6 +100,26 @@ functions=[
                 }
             }
         }
+    },
+    {
+        "name": "change_model",
+        "description": "Сменить модель генерации текста",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "enum": [f"{OpenAI_Models.DEFAULT_MODEL.value}", f"{OpenAI_Models.O1_MINI.value}"],
+                    "description": f"'{OpenAI_Models.DEFAULT_MODEL.value}' - основная используемая модель широкого назначения. '{OpenAI_Models.O1_MINI.value}' - модель с рассуждениями, подходящая для решения логических задач, написания кода и научных целей. Не имеет function calling, не может работать с изображениями. Если пользователя не устраивают текущие результаты, то можно сменить модель."
+                 },
+                 "style": {
+                     "type": "string",
+                     "enum": ["vivid", "natural"],
+                     "description": "Стиль изображения: 'vivid' или 'natural'"
+
+                }
+            }
+        }
     }
 ]
 
@@ -141,10 +161,25 @@ def generate_image(openai_client, prompt:str, style:str):
     # Отправка изображения пользователю
     return image_url
 
-    
+def transcribe_audio(openai_client, audio_filename):
+    try:
+         # Распознавание речи с использованием OpenAI
+        transcription = openai_client.audio.transcriptions.create(
+                            model=get_voice_recognition_model(),
+                            file=open(audio_filename, 'rb')
+                            )
+        recognized_text=transcription.text
+    except Exception as e:
+        logging.error("Ошибка при распознавании речи: " + str(e))
+        return
+    # Отправка текста пользователю
+    return recognized_text
 
 
-async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, model_name: str, messages, recursion_depth=0):
+
+
+
+async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0):
     try:
         logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
@@ -153,7 +188,8 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             return None, None
 
         additional_system_messages=[]
-       
+        model_name=await get_user_model(update.effective_user.id)
+
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -194,7 +230,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 new_system_message={"role": "system", "content": result}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
+                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
                 return answer, additional_system_messages+additional_system_messages2
 
 
@@ -212,6 +248,21 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     bot_reply = "Я сделал :)"
                     return bot_reply, additional_system_messages
             
+            if function_call and function_call.name == "change_model":
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию смены модели. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                new_model_name_str = function_args_dict["model"]
+                new_model_name = get_OpenAI_Models(new_model_name_str)
+                if new_model_name_str!=model_name:
+                    await set_user_model(update.effective_user.id,new_model_name)
+                    await reply_service_text(update, f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.). Для возврата на стандартную модель сбросьте контекст (/reset)")
+                    new_system_message={"role": "system", "content": f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.)."}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                return answer, additional_system_messages+additional_system_messages2
+            
             if function_call and function_call.name == "get_location_by_address":
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию получения геолокации по адресу. Аргументы: {function_args}, Тип: {type(function_args)}")
@@ -228,7 +279,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, model_name, messages, recursion_depth+1)
+                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2
 
 
