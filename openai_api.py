@@ -206,7 +206,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 openai_client.chat.completions.create,
                 model=model_name,
                 messages=filtered_messages,
-                max_tokens=16384
+                max_completion_tokens=32.768
             )
              
 
