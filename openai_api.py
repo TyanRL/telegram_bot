@@ -272,8 +272,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.)."}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
-                return answer, additional_system_messages+additional_system_messages2
+                    return None,None
             
             if function_call and function_call.name == "get_location_by_address":
                 function_args = response.choices[0].message.function_call.arguments
