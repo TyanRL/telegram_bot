@@ -77,9 +77,9 @@ voice_recognition_model_name="whisper-1"
 def get_voice_recognition_model():
     return voice_recognition_model_name
 
-version=""
+version="Нет данных"
 
-async def set_bot_version(bot_version: str) -> None:
+def set_bot_version(bot_version: str) -> None:
     global version
     version = bot_version
 
@@ -198,11 +198,8 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if await in_user_list(user):
-        if version == "":
-            await reply_service_text(update,"Нет данных.")
-        else:
-            model = await get_user_model(update.effective_user.id)
-            await reply_service_text(update,f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}")
+        model = await get_user_model(update.effective_user.id)
+        await reply_service_text(update,f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}")
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
