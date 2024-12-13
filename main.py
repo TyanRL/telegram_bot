@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="8.8"
+version="8.9"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -37,7 +37,7 @@ voice_recognition_model_name="whisper-1"
 
 
 # URL вебхука
-WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com"
+WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com/telegram-webhook"
 
 def get_system_message():
     # Сообщение системы для пользователя
@@ -219,7 +219,7 @@ async def not_authorized_message(update, user):
     await reply_service_text(update,f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
     logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
-async def set_webhook(application):
+async def set_telegram_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
 
 # Обработка геолокации
@@ -294,7 +294,7 @@ async def main():
     await application.start()
 
     # Настройка маршрута вебхука
-    async def webhook_handler(request):
+    async def telegram_webhook_handler(request):
         update = await request.json()
         update = Update.de_json(update, application.bot)
         await application.process_update(update)
@@ -302,7 +302,7 @@ async def main():
 
     # Создание веб-приложения aiohttp
     app = web.Application()
-    app.router.add_post('/', webhook_handler)
+    app.router.add_post('/telegram-webhook', telegram_webhook_handler)
 
     # Запуск вебхука
     runner = web.AppRunner(app)
@@ -311,7 +311,7 @@ async def main():
     await site.start()
 
     # Установка вебхука в Telegram
-    await set_webhook(application)
+    await set_telegram_webhook(application)
 
     # Запуск бота
     logging.info(f"Bot v{version} is running. Model - {default_model_name}")
