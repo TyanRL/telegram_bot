@@ -189,12 +189,13 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
 
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
+        functions_to_call= functions
 
         # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
         if model_name == OpenAI_Models.O1_MINI.value:
              filtered_messages = [message for message in messages if message["role"] != "system"]
              messages=filtered_messages
-             functions=[]
+             functions_to_call=[]
              function_call="",  
 
 
@@ -206,7 +207,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 openai_client.chat.completions.create,
                 model=model_name,
                 messages=messages,
-                functions=functions,
+                functions=functions_to_call,
                 function_call="auto",  
                 max_tokens=16384
             )
