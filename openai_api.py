@@ -196,7 +196,6 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
         if model_name == OpenAI_Models.O1_MINI.value:
              filtered_messages = [message for message in messages if message["role"] != "system"]
              messages=filtered_messages
-             functions_to_call=[]
              function_call_parameter="",  
 
 
