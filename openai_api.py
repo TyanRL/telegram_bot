@@ -189,28 +189,31 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
 
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
-        functions_to_call= functions
-        function_call_parameter="auto"
+        
+        partial_param = partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                functions=functions,
+                function_call="auto",  
+                max_tokens=16384
+            )
 
         # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
         if model_name == OpenAI_Models.O1_MINI.value:
-             filtered_messages = [message for message in messages if message["role"] != "system"]
-             messages=filtered_messages
-             function_call_parameter="",  
-
-
+            filtered_messages = [message for message in messages if message["role"] != "system"]
+            partial_param = partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=filtered_messages,
+                max_tokens=16384
+            )
+             
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=messages,
-                functions=functions_to_call,
-                function_call=function_call_parameter,  
-                max_tokens=16384
-            )
+            partial_param
         )
         
         if (response.choices and 
