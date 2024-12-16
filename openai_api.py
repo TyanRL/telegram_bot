@@ -146,7 +146,12 @@ functions=[
                     },
                     "description": "Массив тегов, связанных с заметкой"
                 },
-            }
+            },
+            "required": [
+                "Title",
+                "Body",
+            ]
+
         }
     },
     {
@@ -181,7 +186,11 @@ functions=[
                     "type": "integer",
                     "description": "Идентификатор заметки в Elasticsearch"
                 },
-            }
+            },
+            "required": [
+                "NoteId",
+             ]
+
         }
     },
 ]
@@ -360,10 +369,16 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             if function_call and (function_call.name == "add_note"):
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию добавления заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
-                function_args_dict = json.loads(function_args)
+                # Если function_args это строка, парсим её
+                if isinstance(function_args, str):
+                    function_args_dict = json.loads(function_args)
+                else:
+                    function_args_dict = function_args  # если это уже словарь
+                
                 title=function_args_dict["Title"]
                 body=function_args_dict["Body"]
                 tags=function_args_dict["Tags"]
+                
                 add_note(update.effective_user.id,title, body, tags)
                 await reply_service_text(update,f"Заметка '{title}' добавлена.")
                 return None, None, None
