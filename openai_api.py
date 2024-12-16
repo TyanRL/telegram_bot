@@ -146,7 +146,6 @@ functions=[
                     },
                     "description": "Массив тегов, связанных с заметкой"
                 },
-                "required": ["Title", "Body"]
             }
         }
     },
