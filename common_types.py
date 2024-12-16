@@ -41,3 +41,19 @@ class SafeList:
     async def get_all(self):
         async with self.lock:
             return list(self.data)
+        
+
+def dict_to_markdown(d, indent=0):
+    result = []
+    for key, value in d.items():
+        indentation = '  ' * indent
+        if isinstance(value, dict):
+            result.append(f"{indentation}## {key}")
+            result.append(dict_to_markdown(value, indent + 1))
+        elif isinstance(value, list):
+            result.append(f"{indentation}### {key}")
+            for item in value:
+                result.append(f"{indentation}- {item}")
+        else:
+            result.append(f"{indentation}- **{key}**: {value}")
+    return "\n".join(result)

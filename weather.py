@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import os
 import requests
 
+from common_types import dict_to_markdown
+
 
 weather_api_key=os.getenv('OPENWEATHERMAP_API_KEY')
 weather_api_key2=os.getenv('WEATHERSTACK_API_KEY')
@@ -42,20 +44,7 @@ weather_codes = {
 def get_weather_description_by_code(code):
     return weather_codes.get(code, "Неизвестный код погоды")
 
-def dict_to_markdown(d, indent=0):
-    result = []
-    for key, value in d.items():
-        indentation = '  ' * indent
-        if isinstance(value, dict):
-            result.append(f"{indentation}## {key}")
-            result.append(dict_to_markdown(value, indent + 1))
-        elif isinstance(value, list):
-            result.append(f"{indentation}### {key}")
-            for item in value:
-                result.append(f"{indentation}- {item}")
-        else:
-            result.append(f"{indentation}- **{key}**: {value}")
-    return "\n".join(result)
+
 
 def get_weekly_forecast(latitude, longitude):
     url = "https://api.open-meteo.com/v1/forecast"

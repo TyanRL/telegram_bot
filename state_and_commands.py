@@ -185,7 +185,7 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await reply_service_text(update,"Список последних сессий пользователей пуст.")
             return
 
-        last_sesssions_str="Список последних сессий пользователей: \n"
+        last_sesssions_str="Список последних сессий топ 10 пользователей: \n"
         for last_session in last_sessions:
             username=last_session.get("username",None)
             userid=last_session.get("userid",None)

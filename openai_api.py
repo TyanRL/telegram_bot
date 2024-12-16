@@ -14,6 +14,8 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from common_types import dict_to_markdown
+from elastic import add_note, get_all_user_notes, get_notes_by_query
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
@@ -121,7 +123,68 @@ functions=[
                 }
             }
         }
-    }
+    },
+    {
+        "name": "add_note",
+        "description": "Добавить заметку по запросу пользователя",
+
+       "parameters": {
+            "type": "object",
+            "properties": {
+                "Title": {
+                    "type": "string",
+                    "description": "Название заметки"
+                },
+                "Body": {
+                    "type": "string",
+                    "description": "Тело заметки"
+                },
+                "Tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Массив тегов, связанных с заметкой"
+                },
+                "required": ["Title", "Body"]
+            }
+        }
+    },
+    {
+        "name": "get_notes_by_query",
+        "description": "Найти существующую заметку по запросу пользователя",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "search_query": {
+                    "type": "string",
+                    "description": "Ключевые слова для поиска заметок в Elasticsearch"
+                },
+            }
+        }
+    },
+    {
+        "name": "get_all_user_notes",
+        "description": "Получить все заметки пользователя",
+
+         "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "remove_note",
+        "description": "Удалить заметку с идентификатором NoteId",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "NoteId": {
+                    "type": "integer",
+                    "description": "Идентификатор заметки в Elasticsearch"
+                },
+            }
+        }
+    },
 ]
 
 
@@ -294,6 +357,57 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     messages.append(new_system_message)
                     (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2, service_after_message
+
+            if function_call and (function_call.name == "add_note"):
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию добавления заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                title=function_args_dict["Title"]
+                body=function_args_dict["Body"]
+                tags=function_args_dict["Tags"]
+                add_note(update.effective_user.id,title, body, tags)
+                reply_service_text(update,f"Заметка '{title}' добавлена.")
+                return None, None, None
+
+            if function_call and (function_call.name == "get_all_user_notes"):
+                logging.info(f"Вызываем функцию получения всех заметок.")
+                documents = get_all_user_notes(update.effective_user.id)
+                answer = ""
+                if len(documents) == 0:
+                    reply_service_text(update,"Заметки не найдены.")
+                    return None, None, None
+                
+                for doc in documents:
+                    new_system_message={"role": "system", "content": dict_to_markdown(doc)}
+                    answer += f"{doc["Title"]}: \n{doc["Body"]} \nТеги: {doc['Tags']}\n\n"
+                    new_system_message={"role": "system", "content": new_system_message}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                reply_service_text(update,f"Найдено {len(documents)} заметок.")
+                return answer, additional_system_messages, None
+            
+            if function_call and (function_call.name == "get_notes_by_query"):
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию поиска заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                search_query=function_args_dict["search_query"]
+                
+                documents = get_notes_by_query(update.effective_user.id, search_query)
+                if len(documents) == 0:
+                    reply_service_text(update,"Заметки не найдены.")
+                    return None, None, None
+                
+                for doc in documents:
+                    new_system_message={"role": "system", "content": dict_to_markdown(doc)}
+                    answer += f"{doc["Title"]}: \n{doc["Body"]} \nТеги: {doc['Tags']}\n\n"
+                    new_system_message={"role": "system", "content": new_system_message}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                
+                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                return answer, additional_system_messages+additional_system_messages2, service_after_message
+
+               
 
 
    
