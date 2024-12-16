@@ -21,7 +21,7 @@ class OpenAI_Models(Enum):
     DEFAULT_MODEL="gpt-4o"
     O1_MINI ="o1-mini"
 
-parse_mode="Markdown"
+parse_mode="MarkdownV2"
 
 
 user_histories = SafeDict()

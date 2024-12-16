@@ -176,7 +176,17 @@ def get_all_session():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute(f"SELECT userid, username, last_session_time FROM {last_session_table_name} ORDER BY last_session_time DESC LIMIT 10")
+        cursor.execute(f"""
+        SELECT 
+            userid, 
+            username, 
+            last_session_time 
+        FROM 
+            {last_session_table_name} 
+        ORDER BY 
+            last_session_time DESC 
+        LIMIT 10;
+        """)
 
         result = cursor.fetchall()
         return [{"userid": row[0], "username": row[1], "last_session_time": row[2]} for row in result]
