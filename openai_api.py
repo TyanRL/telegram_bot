@@ -365,7 +365,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 body=function_args_dict["Body"]
                 tags=function_args_dict["Tags"]
                 add_note(update.effective_user.id,title, body, tags)
-                reply_service_text(update,f"Заметка '{title}' добавлена.")
+                await reply_service_text(update,f"Заметка '{title}' добавлена.")
                 return None, None, None
 
             if function_call and (function_call.name == "get_all_user_notes"):
@@ -373,7 +373,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 documents = get_all_user_notes(update.effective_user.id)
                 answer = ""
                 if len(documents) == 0:
-                    reply_service_text(update,"Заметки не найдены.")
+                    await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
                 
                 for doc in documents:
@@ -382,7 +382,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                reply_service_text(update,f"Найдено {len(documents)} заметок.")
+                await reply_service_text(update,f"Найдено {len(documents)} заметок.")
                 return answer, additional_system_messages, None
             
             if function_call and (function_call.name == "get_notes_by_query"):
@@ -393,7 +393,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 documents = get_notes_by_query(update.effective_user.id, search_query)
                 if len(documents) == 0:
-                    reply_service_text(update,"Заметки не найдены.")
+                    await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
                 
                 for doc in documents:
@@ -403,8 +403,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                 
-                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
-                return answer, additional_system_messages+additional_system_messages2, service_after_message
+                return answer, additional_system_messages, None
 
                
 

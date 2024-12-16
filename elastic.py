@@ -132,7 +132,7 @@ def add_or_update_document_common(index_name, document, document_id, need_to_upd
                 skipped_docs += 1
                 # print(f"Document {document_id} exists and not updated")
     except Exception as e:
-        print(f"Error in add_or_update_document: {e}")
+         logging.error(f"Error in add_or_update_document: {e}")
 
 def get_notes_by_query(user_id:int, search_text:str, top_k=5):
     try:
@@ -202,13 +202,13 @@ def rebuild_response(response):
     founded_docs=response['hits']['total']['value']
     documents = []
 
-    logging.info("Общее количество найденных документов:",founded_docs )
+    logging.info(f"Общее количество найденных документов: {founded_docs}" )
     for hit in response['hits']['hits']:
         document = hit["_source"]
         document['NoteId'] = hit["_id"]
         document['Score'] = hit["_score"]
-        logging.info("ID документа:", document['NoteId'])
-        logging.info("Источник:", document)
+        logging.info(f"ID документа: { document['NoteId']}")
+        logging.info(f"Источник: {document}")
         documents.append(document)
     return documents
 
