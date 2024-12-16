@@ -407,7 +407,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                await reply_service_text(update,f"Найдено {len(documents)} заметок.")
+                await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
                 return answer, additional_system_messages, None
             
             if function_call and (function_call.name == "get_notes_by_query"):
@@ -440,5 +440,5 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
 
     except Exception as e:
         # Логируем ошибки
-        logging.error(f"Ошибка при обращении к OpenAI API: {e}")
+        logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
         return "Произошла ошибка при обработке запроса.", None, None
