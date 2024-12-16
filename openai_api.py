@@ -101,7 +101,10 @@ functions=[
                     "enum": ["vivid", "natural"],
                     "description": "Стиль изображения: 'vivid' или 'natural'"
                 }
-            }
+            },
+             "required": [
+                 "prompt",
+             ]
         }
     },
     {
@@ -115,13 +118,10 @@ functions=[
                     "enum": [f"{OpenAI_Models.DEFAULT_MODEL.value}", f"{OpenAI_Models.O1_MINI.value}"],
                     "description": f"'{OpenAI_Models.DEFAULT_MODEL.value}' - основная используемая модель широкого назначения. '{OpenAI_Models.O1_MINI.value}' - модель с рассуждениями, подходящая для решения логических задач, написания кода и научных целей. Не имеет function calling, не может работать с изображениями. Если пользователя не устраивают текущие результаты, то можно сменить модель."
                  },
-                 "style": {
-                     "type": "string",
-                     "enum": ["vivid", "natural"],
-                     "description": "Стиль изображения: 'vivid' или 'natural'"
-
-                }
-            }
+            },
+            "required": [
+                 "model",
+             ]
         }
     },
     {
@@ -164,7 +164,10 @@ functions=[
                     "type": "string",
                     "description": "Ключевые слова для поиска заметок в Elasticsearch"
                 },
-            }
+            },
+            "required": [
+                 "search_query",
+             ]
         }
     },
     {
@@ -386,7 +389,9 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 add_note(update.effective_user.id,title, body, tags)
                 await reply_service_text(update,f"Заметка '{title}' добавлена.")
-                return None, None, None
+                bot_reply = "Я сделал :)"
+                return bot_reply, additional_system_messages, None
+                
 
             if function_call and (function_call.name == "get_all_user_notes"):
                 logging.info(f"Вызываем функцию получения всех заметок.")
