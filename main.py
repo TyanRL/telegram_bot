@@ -23,7 +23,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.6"
+version="10.7"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')

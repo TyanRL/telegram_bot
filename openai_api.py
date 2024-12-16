@@ -403,7 +403,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"{doc['Title']}: \n{doc['Body']} \nТеги: {doc['Tags']}\n\n"
+                    answer += f"{doc['Title']: {doc['Body']}}\n"
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
@@ -415,7 +415,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 logging.info(f"Вызываем функцию поиска заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 search_query=function_args_dict["search_query"]
-                
+                answer = ""
                 documents = get_notes_by_query(update.effective_user.id, search_query)
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
@@ -423,7 +423,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"{doc['Title']}: \n{doc['Body']} \nТеги: {doc['Tags']}\n\n"
+                    answer += f"{doc['Title']: {doc['Body']}}\n"
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
