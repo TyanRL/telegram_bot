@@ -367,6 +367,11 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     return answer, additional_system_messages+additional_system_messages2, service_after_message
 
             if function_call and (function_call.name == "add_note"):
+                logging.info(f"Function call arguments 1: {response.choices[0]}")
+                logging.info(f"Function call arguments 2: {response.choices[0].message}")
+                logging.info(f"Function call arguments 3: {response.choices[0].message.function_call}")
+                logging.info(f"Function call arguments 4: {response.choices[0].message.function_call.arguments}")
+
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию добавления заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
                 # Если function_args это строка, парсим её
