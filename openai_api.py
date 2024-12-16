@@ -403,7 +403,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"{doc['Title']: {doc['Body']}}\n"
+                    answer += f"{doc['Title']}: {doc['Body']}\n"
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
@@ -423,7 +423,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"{doc['Title']: {doc['Body']}}\n"
+                    answer += f"{doc['Title']}: {doc['Body']}\n"
                     new_system_message={"role": "system", "content": new_system_message}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
