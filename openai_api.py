@@ -3,6 +3,7 @@ from functools import partial
 import json
 import logging
 import os
+from typing import Tuple
 import openai
 import requests
 from telegram import Update
@@ -179,13 +180,14 @@ def transcribe_audio(openai_client, audio_filename):
 
 
 
-async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0):
+async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0)->Tuple[str, list[dict], str]:
     try:
         logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
         if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
             logging.error("Recursion depth exceeded")
-            return None, None
+            return None, None, None
+
 
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
@@ -226,7 +228,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 # Вызываем функцию запроса геолокации
                 logging.info("Вызываем функцию запроса геолокации")
                 await request_geolocation(update, context)
-                return None, None
+                return None, None, None
             if function_call and (function_call.name == "get_weather_description" or function_call.name == "get_weekly_forecast"):
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию запроса погоды. Аргументы: {function_args}, Тип: {type(function_args)}")
@@ -242,8 +244,8 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 new_system_message={"role": "system", "content": result}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
-                return answer, additional_system_messages+additional_system_messages2
+                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                return answer, additional_system_messages+additional_system_messages2, service_after_message
 
 
             if function_call and function_call.name == "generate_image":
@@ -253,12 +255,12 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 image_url = generate_image(openai_client, function_args_dict["prompt"], function_args_dict["style"])
                 if image_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
-                    return bot_reply, additional_system_messages
+                    return bot_reply, additional_system_messages, None
                 else:
                     # Если генерация прошла успешно, то отправляем пользователю картинку
                     await update.message.reply_photo(photo=image_url)
                     bot_reply = "Я сделал :)"
-                    return bot_reply, additional_system_messages
+                    return bot_reply, additional_system_messages, None
             
             if function_call and function_call.name == "change_model":
                 function_args = response.choices[0].message.function_call.arguments
@@ -272,7 +274,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.)."}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    return None,None
+                    return None,None, None
             
             if function_call and function_call.name == "get_location_by_address":
                 function_args = response.choices[0].message.function_call.arguments
@@ -282,7 +284,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 geoloc = get_location_by_address(address)
                 if geoloc is None:
                     bot_reply = "Не удалось получить геолокацию."
-                    return bot_reply, additional_system_messages
+                    return bot_reply, additional_system_messages, None
                 else:
                     (latitude, longitude) = geoloc
                     result = f"Геолокация {address} установлена. Широта: {latitude}, Долгота: {longitude}"
@@ -290,16 +292,16 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
-                    return answer, additional_system_messages+additional_system_messages2
+                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                    return answer, additional_system_messages+additional_system_messages2, service_after_message
 
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()
-        return bot_reply, additional_system_messages
+        return bot_reply, additional_system_messages, None
 
     except Exception as e:
         # Логируем ошибки
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
-        return "Произошла ошибка при обработке запроса."
+        return "Произошла ошибка при обработке запроса.", None, None

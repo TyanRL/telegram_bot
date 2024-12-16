@@ -96,7 +96,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         logging.info([system_message] + history)
         
         
-        bot_reply, additional_system_messages = await get_model_answer(openai_client, update, context, [system_message] + history)
+        bot_reply, additional_system_messages, service_after_message = await get_model_answer(openai_client, update, context, [system_message] + history)
         
         # Добавляем дополнительную информацию в историю
         if additional_system_messages is not None:
