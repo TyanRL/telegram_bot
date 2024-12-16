@@ -7,4 +7,3 @@ ymaps==1.3
 aiohttp
 requests
 elasticsearch==7.13.4
-requests-aws4auth==1.3.1
