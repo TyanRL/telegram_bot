@@ -406,7 +406,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"ID {doc['note_ids']} - {doc['title']}: {doc['body']}\n"
+                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                 await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
@@ -425,7 +425,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"ID {doc['note_ids']} - {doc['title']}: {doc['body']}\n"
+                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                 
