@@ -23,7 +23,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.16"
+version="10.17"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -53,6 +53,7 @@ f"""
     - если нет, то запроси геолокацию через функцию request_geolocation.
 
 3. Если для ответа на вопрос пользователя требуется сгенерировать картинку, то вызови функцию generate_image.
+4. Если пользователь просит сохранить что-то, то сохраняй это в заметках. Для этого используй функцию add_note.
 """,
     }
     return system_message
