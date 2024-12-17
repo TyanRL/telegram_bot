@@ -134,7 +134,7 @@ def add_or_update_document_common(index_name, document, document_id, need_to_upd
     except Exception as e:
          logging.error(f"Error in add_or_update_document: {e}")
 
-def get_notes_by_query(user_id:int, search_text:str, top_k=5):
+def get_notes_by_query(user_id:int, search_text:str, top_k=10):
     try:
         # Составление запроса
         search_query = {

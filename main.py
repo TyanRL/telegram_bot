@@ -23,7 +23,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.21"
+version="10.22"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -54,7 +54,7 @@ f"""
 
 3. Если для ответа на вопрос пользователя требуется сгенерировать картинку, то вызови функцию generate_image.
 4. Если пользователь просит сохранить что-то, то сохраняй это в заметках, которые хранятся в базе Elasticsearch.  Для этого используй функцию add_note.
-5. Поддерживается умный поиск заметок в Elasticsearch. Для этого используй функцию get_notes_by_query. Поиск можно вести по полям Title, Body, Tags, CreatedDate.
+5. Поддерживается умный поиск заметок в Elasticsearch. Для этого используй функцию get_notes_by_query. Поиск можно вести по полям Title, Body, Tags, CreatedDate. Время создания хранится в ISO и UTC (now_utc.replace(microsecond=0).isoformat()).
 """,
     }
     return system_message
