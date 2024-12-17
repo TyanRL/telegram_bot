@@ -198,6 +198,11 @@ def remove_note(note_id:int):
         logging.error("Ошибка при удалении в ElasticSearch", exc_info=True)
         return False
 
+def remove_notes(note_ids:list[int]):
+    for note_id in note_ids:
+        remove_note(note_id)
+
+
 def rebuild_response(response):
     founded_docs=response['hits']['total']['value']
     documents = []

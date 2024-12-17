@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
 )
 from common_types import dict_to_markdown
-from elastic import add_note, get_all_user_notes, get_notes_by_query
+from elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
@@ -131,15 +131,15 @@ functions=[
        "parameters": {
             "type": "object",
             "properties": {
-                "Title": {
+                "title": {
                     "type": "string",
                     "description": "Название заметки"
                 },
-                "Body": {
+                "body": {
                     "type": "string",
                     "description": "Тело заметки"
                 },
-                "Tags": {
+                "tags": {
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -148,8 +148,8 @@ functions=[
                 },
             },
             "required": [
-                "Title",
-                "Body",
+                "title",
+                "body",
             ]
 
         }
@@ -180,18 +180,21 @@ functions=[
         }
     },
     {
-        "name": "remove_note",
-        "description": "Удалить заметку с идентификатором NoteId",
+        "name": "remove_notes",
+        "description": "Удалить заметку с идентификаторами note_ids",
         "parameters": {
-            "type": "object",
+            "type": "array",
             "properties": {
-                "NoteId": {
-                    "type": "integer",
-                    "description": "Идентификатор заметки в Elasticsearch"
+                 "note_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "description": "Идентификаторы удаляемых заметок"
                 },
             },
             "required": [
-                "NoteId",
+                "note_ids",
              ]
 
         }
@@ -383,9 +386,9 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 else:
                     function_args_dict = function_args  # если это уже словарь
                 
-                title=function_args_dict["Title"]
-                body=function_args_dict["Body"]
-                tags=function_args_dict["Tags"]
+                title=function_args_dict["title"]
+                body=function_args_dict["body"]
+                tags=function_args_dict["tags"]
                 
                 add_note(update.effective_user.id,title, body, tags)
                 await reply_service_text(update,f"Заметка '{title}' добавлена.")
@@ -403,7 +406,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
+                    answer += f"ID {doc['note_ids']} - {doc['title']}: {doc['body']}\n"
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                 await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
@@ -422,13 +425,25 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 
                 for doc in documents:
                     new_system_message={"role": "system", "content": dict_to_markdown(doc)}
-                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
+                    answer += f"ID {doc['note_ids']} - {doc['title']}: {doc['body']}\n"
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                 
                 return answer, additional_system_messages, None
 
-               
+            if function_call and (function_call.name == "remove_notes"):
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию удаления заметок. Аргументы: {function_args}, Тип: {type(function_args)}")
+                # Если function_args это строка, парсим её
+                if isinstance(function_args, str):
+                    function_args_dict = json.loads(function_args)
+                else:
+                    function_args_dict = function_args  # если это уже словарь
+                
+                note_ids=[int(x) for x in function_args_dict["note_ids"]]
+                remove_notes(note_ids)
+                bot_reply = "Заметки удалены"
+                return bot_reply, additional_system_messages, None  
 
 
    
