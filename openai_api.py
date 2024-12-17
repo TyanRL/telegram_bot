@@ -441,7 +441,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     function_args_dict = function_args  # если это уже словарь
                 
                 note_ids=[int(x) for x in function_args_dict["note_ids"]]
-                remove_notes(note_ids)
+                await remove_notes(note_ids)
                 bot_reply = "Заметки удалены"
                 return bot_reply, additional_system_messages, None  
 
