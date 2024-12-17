@@ -183,7 +183,7 @@ functions=[
         "name": "remove_notes",
         "description": "Удалить заметку с идентификаторами note_ids",
         "parameters": {
-            "type": "array",
+            "type": "object",
             "properties": {
                  "note_ids": {
                     "type": "array",
