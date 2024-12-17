@@ -134,33 +134,36 @@ def add_or_update_document_common(index_name, document, document_id, need_to_upd
     except Exception as e:
          logging.error(f"Error in add_or_update_document: {e}")
 
-def get_notes_by_query(user_id: int, search_text: str, start_date: str = None, end_date: str = None, top_k=10):
+def get_notes_by_query(user_id: int, search_text: str = None, start_date: str = None, end_date: str = None, top_k=10):
     try:
         must_clauses = []
-        
-        # Полнотекстовый поиск по указанным полям
-        if search_text:
+
+        # Полнотекстовый поиск или match_all
+        if search_text == "*":
+            # Если хотите вернуть все документы, удовлетворяющие условиям фильтра, используем match_all.
+            must_clauses.append({"match_all": {}})
+        elif search_text:
             must_clauses.append({
                 "multi_match": {
                     "query": search_text,
                     "fields": ["Title^2", "Body", "Tags^1.5"]
                 }
             })
-        
-        # Диапазонный фильтр по дате, если указаны даты
+
+        # Диапазонный фильтр по дате
         if start_date or end_date:
             date_range = {}
             if start_date:
                 date_range["gte"] = start_date
             if end_date:
                 date_range["lte"] = end_date
-            
+
             must_clauses.append({
                 "range": {
                     "CreatedDate": date_range
                 }
             })
-        
+
         search_query = {
             "query": {
                 "bool": {
@@ -181,6 +184,7 @@ def get_notes_by_query(user_id: int, search_text: str, start_date: str = None, e
     except Exception as e:
         logging.error("Ошибка при поиске в ElasticSearch", exc_info=True)
         return []
+
 
 def get_all_user_notes(user_id:int):
     try:
