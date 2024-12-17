@@ -165,9 +165,7 @@ functions=[
                     "description": "Ключевые слова для поиска заметок в Elasticsearch"
                 },
             },
-            "required": [
-                 "search_query",
-             ]
+          
         }
     },
     {
@@ -190,10 +188,7 @@ functions=[
                     "description": "Идентификатор заметки в Elasticsearch"
                 },
             },
-            "required": [
-                "NoteId",
-             ]
-
+          
         }
     },
 ]
