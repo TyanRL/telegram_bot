@@ -404,11 +404,15 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
                 
+                system_message_body = ""
                 for doc in documents:
-                    new_system_message={"role": "system", "content": dict_to_markdown(doc)}
                     answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
+                    system_message_body += f"#ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
+
+                new_system_message={"role": "system", "content": system_message_body}
+                additional_system_messages.append(new_system_message)
+                messages.append(new_system_message)
+                
                 await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
                 return answer, additional_system_messages, None
             
@@ -422,12 +426,14 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
-                
+                system_message_body = ""
                 for doc in documents:
-                    new_system_message={"role": "system", "content": dict_to_markdown(doc)}
                     answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
+                    system_message_body += f"#ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
+
+                new_system_message={"role": "system", "content": system_message_body}
+                additional_system_messages.append(new_system_message)
+                messages.append(new_system_message)
                 
                 return answer, additional_system_messages, None
 
