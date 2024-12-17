@@ -149,7 +149,7 @@ def get_notes_by_query(user_id:int, search_text:str, top_k=5):
                         {
                             "multi_match": {
                                 "query": search_text,
-                                "fields": ["Title^2", "Body", "Tags^1.5"]
+                                "fields": ["Title^2", "Body", "Tags^1.5", "CreatedDate"]
                             }
                         }
                     ]
