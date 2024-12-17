@@ -407,7 +407,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 system_message_body = ""
                 for doc in documents:
                     answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    system_message_body += f"#ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
+                    system_message_body += f"#Note ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
 
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
@@ -429,7 +429,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 system_message_body = ""
                 for doc in documents:
                     answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    system_message_body += f"#ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
+                    system_message_body += f"#Note ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n"
 
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
