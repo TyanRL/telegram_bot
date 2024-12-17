@@ -17,13 +17,14 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
+from elastic import get_all_user_notes
 from openai_api import get_model_answer, transcribe_audio
-from state_and_commands import  OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_bot_version, set_session_info, set_user_image, start
+from state_and_commands import  OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_bot_version, set_session_info, set_user_image, start
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.24"
+version="10.25"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -259,7 +260,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_service_text(update,"Ошибка при загрузке изображения")
         logging.error(f"Ошибка в обработчике изображений: {e}")
 
+async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if await in_user_list(user):
 
+        documents = get_all_user_notes(update.effective_user.id)
+        if len(documents) == 0:
+            await reply_service_text(update,"Заметки не найдены.")
+            return
+        answer, system_message_body = get_notes_text(documents)
+        history = await user_histories.get(update.effective_user.id, [])
+        history.append({"role": "system", "content": system_message_body})
+        await user_histories.set(update.effective_user.id, history)
+        
+        await reply_service_text(update,answer)
+    else:
+        await reply_service_text(update,"У вас нет прав на эту команду.")
 
 async def main():
     set_bot_version(version)
@@ -280,6 +296,7 @@ async def main():
     application.add_handler(CommandHandler("last_session", get_last_session))
     application.add_handler(CommandHandler("info", info))
     application.add_handler(CommandHandler("location", add_location_button))
+    application.add_handler(CommandHandler("show_notes", show_notes))
     
     
     

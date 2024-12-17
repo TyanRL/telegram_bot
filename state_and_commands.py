@@ -206,4 +206,14 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
+def get_notes_text(documents):
+    answer = ""
+    system_message_body = ""
+    for doc in documents:
+        answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
+        system_message_body += f"#Note ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n##Created:\n{doc['CreatedDate']}"
+    return answer,system_message_body
+
+
+
 #------------------------------------------------end of COMMANDS-----------------------------------------------------------------------

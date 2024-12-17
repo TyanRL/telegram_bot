@@ -16,7 +16,7 @@ from telegram.ext import (
 )
 from common_types import dict_to_markdown
 from elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
-from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
+from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
 
@@ -407,15 +407,12 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
             if function_call and (function_call.name == "get_all_user_notes"):
                 logging.info(f"Вызываем функцию получения всех заметок.")
                 documents = get_all_user_notes(update.effective_user.id)
-                answer = ""
+                
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
                 
-                system_message_body = ""
-                for doc in documents:
-                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    system_message_body += f"#Note ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n##Created:\n{doc['CreatedDate']}"
+                answer, system_message_body = get_notes_text(documents)
 
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
@@ -432,16 +429,13 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 start_date=function_args_dict.get("start_date",None)
                 end_date=function_args_dict.get("end_date",None)
 
-                answer = ""
+                
                 documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
-                system_message_body = ""
-                for doc in documents:
-                    answer += f"ID {doc['NoteId']} - {doc['Title']}: {doc['Body']}\n"
-                    system_message_body += f"#Note ID: {doc['NoteId']}, Title: {doc['Title']}\n ##Body:\n{doc['Body']}\n ##Tags:\n{doc['Tags']}\n##Created:\n{doc['CreatedDate']}"
-
+                
+                answer, system_message_body = get_notes_text(documents)
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
@@ -472,3 +466,5 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
         # Логируем ошибки
         logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
         return "Произошла ошибка при обработке запроса.", None, None
+
+
