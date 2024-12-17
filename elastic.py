@@ -134,9 +134,33 @@ def add_or_update_document_common(index_name, document, document_id, need_to_upd
     except Exception as e:
          logging.error(f"Error in add_or_update_document: {e}")
 
-def get_notes_by_query(user_id:int, search_text:str, top_k=10):
+def get_notes_by_query(user_id: int, search_text: str, start_date: str = None, end_date: str = None, top_k=10):
     try:
-        # Составление запроса
+        must_clauses = []
+        
+        # Полнотекстовый поиск по указанным полям
+        if search_text:
+            must_clauses.append({
+                "multi_match": {
+                    "query": search_text,
+                    "fields": ["Title^2", "Body", "Tags^1.5"]
+                }
+            })
+        
+        # Диапазонный фильтр по дате, если указаны даты
+        if start_date or end_date:
+            date_range = {}
+            if start_date:
+                date_range["gte"] = start_date
+            if end_date:
+                date_range["lte"] = end_date
+            
+            must_clauses.append({
+                "range": {
+                    "CreatedDate": date_range
+                }
+            })
+        
         search_query = {
             "query": {
                 "bool": {
@@ -145,22 +169,13 @@ def get_notes_by_query(user_id:int, search_text:str, top_k=10):
                             "UserId": str(user_id)
                         }
                     },
-                    "must": [
-                        {
-                            "multi_match": {
-                                "query": search_text,
-                                "fields": ["Title^2", "Body", "Tags^1.5", "CreatedDate"]
-                            }
-                        }
-                    ]
+                    "must": must_clauses
                 }
             },
             "size": top_k
         }
 
-        # Выполнение запроса
         response = es.search(index=notes_index_name, body=search_query)
-        # Вывод результатов
         documents = rebuild_response(response)
         return documents
     except Exception as e:

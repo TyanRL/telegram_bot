@@ -164,6 +164,14 @@ functions=[
                     "type": "string",
                     "description": "Ключевые слова для поиска заметок в Elasticsearch"
                 },
+                "start_date": {
+                    "type": "string",
+                    "description": "Начальная дата диапазона для поиска заметок в Elasticsearch по дате создания"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "Конечная дата диапазона для поиска заметок в Elasticsearch по дате создания"
+                },
             },
             "required": [
                  "search_query",
@@ -421,8 +429,11 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 logging.info(f"Вызываем функцию поиска заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 search_query=function_args_dict["search_query"]
+                start_date=function_args_dict.get("start_date",None)
+                end_date=function_args_dict.get("end_date",None)
+
                 answer = ""
-                documents = get_notes_by_query(update.effective_user.id, search_query)
+                documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
                     return None, None, None
