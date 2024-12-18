@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.26"
+version="10.27"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -62,7 +62,7 @@ f"""
     }
     return system_message
 
-max_history_length = 20  # Максимальное количество сообщений в истории
+max_history_length = 15  # Максимальное количество сообщений в истории
 
 user_histories=get_history()
 
