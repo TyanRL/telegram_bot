@@ -216,21 +216,23 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
 async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if len(context.args) == 0:
+            await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
+            return
     
-    if len(context.args) == 0:
-        await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
-        return
-    
-    parser = argparse.ArgumentParser(description='Отправить сообщение через бота Telegram.')
-    parser.add_argument('message', type=str, help='Сообщение для отправки')
-    parser.add_argument('--user_id_str', type=str, help='id пользователя')
+        parser = argparse.ArgumentParser(description='Отправить сообщение через бота Telegram.')
+        parser.add_argument('message', type=str, help='Сообщение для отправки')
+        parser.add_argument('++user_id_str', type=str, help='id пользователя')
 
-    args = parser.parse_args(context.args)
+        args = parser.parse_args(context.args)
 
-    message_text = args.message
-    user_id_str = args.user_id_str
+        message_text = args.message
+        user_id_str = args.user_id_str
 
-    await send_service_message_inner(update,message_text, user_id_str)
+        await send_service_message_inner(update,message_text, user_id_str)
+    except Exception as e:
+                logging.info(f"Ошибка при обработке оповещения: {e}") 
 
 
 async def send_service_message_inner(update: Update, message:str, user_id_str=None) -> None:
