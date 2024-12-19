@@ -2,7 +2,7 @@
 import datetime
 import logging
 import os
-import argparse
+
 
 from zoneinfo import ZoneInfo
 from enum import Enum, unique
@@ -217,22 +217,24 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        if len(context.args) == 0:
-            await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
+        if not context.args:
+            await reply_service_text(update, "Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
             return
-    
-        parser = argparse.ArgumentParser(description='Отправить сообщение через бота Telegram.')
-        parser.add_argument('message', type=str, help='Сообщение для отправки')
-        parser.add_argument('++user_id_str', type=str, help='id пользователя')
 
-        args = parser.parse_args(context.args)
+        args = context.args  # Список аргументов после команды
+        message_text = ""
+        user_id_str = ""
 
-        message_text = args.message
-        user_id_str = args.user_id_str
-
-        await send_service_message_inner(update,message_text, user_id_str)
+        # Ожидаем "--<user_id>" как последний аргумент или его отсутствие
+        if args[-1].startswith("--"):
+            user_id_str = args.pop(-1)[2:]  # Убираем "--" у идентификатора пользователя
+        
+        # Оставшиеся аргументы составляют сообщение
+        message_text = ' '.join(args)
+        
+        await send_service_message_inner(update, message_text, user_id_str)
     except Exception as e:
-                logging.info(f"Ошибка при обработке оповещения: {e}") 
+        logging.info(f"Ошибка при обработке оповещения: {e}")
 
 
 async def send_service_message_inner(update: Update, message:str, user_id_str=None) -> None:
