@@ -1,10 +1,11 @@
 
 import datetime
-from enum import Enum, unique
 import logging
 import os
-from zoneinfo import ZoneInfo
+import argparse
 
+from zoneinfo import ZoneInfo
+from enum import Enum, unique
 from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot
 from telegram.ext import (
     ApplicationBuilder,
@@ -215,15 +216,27 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
 async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    
+    if len(context.args) == 0:
+        await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
+        return
+    
+    parser = argparse.ArgumentParser(description='Отправить сообщение через бота Telegram.')
+    parser.add_argument('message', type=str, help='Сообщение для отправки')
+    parser.add_argument('--user_id_str', type=str, help='id пользователя')
+
+    args = parser.parse_args(context.args)
+
+    message_text = args.message
+    user_id_str = args.user_id_str
+
+    await send_service_message_inner(update,message_text, user_id_str)
+
+
+async def send_service_message_inner(update: Update, message:str, user_id_str=None) -> None:
     user = update.effective_user
     if in_admin_list(user):
-        if len(context.args) == 0:
-            await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение>")
-            return
-        message = context.args[0]
-        user_id_str=None
-        if len(context.args) > 1:
-            user_id_str = context.args[1]
+       
         temp_user_ids = await get_all()
         
         if user_id_str is not None and user_id_str!= "":
@@ -231,7 +244,7 @@ async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 user_id = int(user_id_str)
                 temp_user_ids=[user_id]
             except ValueError as e:
-                await reply_service_text(update,"Неверный формат id пользователя. Команда должна выглядеть так: /send_smes <сообщение> <id>")
+                await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
                 return
         
         for user_id in temp_user_ids:
