@@ -230,7 +230,6 @@ async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 user_id = int(user_id_str)
                 temp_user_ids=[user_id]
-                logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
             except ValueError as e:
                 await reply_service_text(update,"Неверный формат id пользователя. Команда должна выглядеть так: /send_smes <сообщение> <id>")
                 return
