@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.34"
+version="10.35"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -58,7 +58,7 @@ f"""
     - Для поиска заметок по дате создания используй параметры функции start_created_date и end_created_date.
     - На вопрос о поиске событий в заметках не используй параметры start_created_date и end_created_date, потому что они о создании заметки, а не о событии внутри нее.
 
-6. Ответ форматируй в разметку MarkdownV2 для телеграм бота.
+6. Ответ преобразуй в ответ в разметке MarkdownV2, экранируя соответсвующие символы.
 """,
     }
     return system_message

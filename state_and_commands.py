@@ -85,9 +85,11 @@ def set_bot_version(bot_version: str) -> None:
     global version
     version = bot_version
 
-async def reply_text(update: Update, message:str):
-    #escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(message, parse_mode=parse_mode)
+async def reply_text(update: Update, message:str, markdown=parse_mode):
+    escaped_text=message
+    if markdown is None:
+        escaped_text = escape_markdown(message, version=2)
+    await update.message.reply_text(escaped_text, parse_mode=markdown)
 
 async def reply_service_text(update: Update, message:str):
     escaped_text = escape_markdown(message, version=2)
@@ -112,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logging.error(f"Нет доступа: {user}. Допустимые пользователи: {get_admins()}")
 
         return
-    await reply_text(update, 'Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
+    await reply_text(update, 'Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.', markdown=None)
 
 # Команда для создания кнопки отправки геолокации
 async def add_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
