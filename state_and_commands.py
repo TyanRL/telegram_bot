@@ -2,9 +2,10 @@
 import datetime
 from enum import Enum, unique
 import logging
+import os
 from zoneinfo import ZoneInfo
 
-from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -23,12 +24,15 @@ class OpenAI_Models(Enum):
 
 parse_mode="MarkdownV2"
 
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 user_histories = SafeDict()
 translate_mode=SafeDict()
 
 user_image = SafeDict()
 user_model = SafeDict()
+
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
 # получает название модели в виде enum из строки
 def get_OpenAI_Models(model: str) -> OpenAI_Models:
@@ -92,6 +96,10 @@ async def reply_text(update: Update, message:str):
 async def reply_service_text(update: Update, message:str):
     escaped_text = escape_markdown(message, version=2)
     await update.message.reply_text(f"_{escaped_text}_", parse_mode=parse_mode)
+
+async def send_service_text(user_id:int, message:str):
+    escaped_text = escape_markdown(message, version=2)
+    await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=parse_mode)
 
 
 
@@ -203,6 +211,36 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model = await get_user_model(update.effective_user.id)
         info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация картинок, распознавание голосовых сообщений,  распознавание картинок, умное сохранение и выдача произвольной текстовой информации в заметках - личный секретарь."
         await reply_service_text(update,info)
+    else:
+        await reply_service_text(update,"У вас нет прав на эту команду.")
+
+async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if in_admin_list(user):
+        if len(context.args) == 0:
+            await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение>")
+            return
+        message = context.args[0]
+        user_id_str=None
+        if len(context.args) > 1:
+            user_id_str = context.args[1]
+        temp_user_ids = await get_all()
+        
+        if user_id_str is not None and user_id_str!= "":
+            try:
+                user_id = int(user_id_str)
+                temp_user_ids=[user_id]
+                logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
+            except ValueError as e:
+                await reply_service_text(update,"Неверный формат id пользователя. Команда должна выглядеть так: /send_smes <сообщение> <id>")
+                return
+        
+        for user_id in temp_user_ids:
+            try:
+                await send_service_text(user_id, message)
+                logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
+            except Exception as e:
+                logging.info(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 

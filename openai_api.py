@@ -14,12 +14,18 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from openai import OpenAI
 from common_types import dict_to_markdown
 from elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
 
+
+
+# Инициализация OpenAI
+opena_ai_api_key=os.getenv('OPENAI_API_KEY')
+openai_client = OpenAI(api_key=opena_ai_api_key)
 
 MAXIMUM_RECURSION_ANSWER_DEPTH = 10
 
@@ -247,7 +253,7 @@ def generate_image(openai_client, prompt:str, style:str):
     # Отправка изображения пользователю
     return image_url
 
-def transcribe_audio(openai_client, audio_filename):
+def transcribe_audio(audio_filename):
     try:
          # Распознавание речи с использованием OpenAI
         transcription = openai_client.audio.transcriptions.create(
@@ -265,7 +271,7 @@ def transcribe_audio(openai_client, audio_filename):
 
 
 
-async def get_model_answer(openai_client, update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0)->Tuple[str, list[dict], str]:
+async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0)->Tuple[str, list[dict], str]:
     try:
         logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
@@ -329,7 +335,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 new_system_message={"role": "system", "content": result}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
                 return answer, additional_system_messages+additional_system_messages2, service_after_message
 
 
@@ -377,7 +383,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2, service_after_message
 
             if function_call and (function_call.name == "add_note"):
@@ -439,7 +445,7 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
                 return answer, additional_system_messages+additional_system_messages2, service_after_message
 
             if function_call and (function_call.name == "remove_notes"):

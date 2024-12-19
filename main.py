@@ -19,19 +19,12 @@ from openai import OpenAI
 
 from elastic import get_all_user_notes
 from openai_api import get_model_answer, transcribe_audio
-from state_and_commands import  OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, set_bot_version, set_session_info, set_user_image, start
+from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_message, set_bot_version, set_session_info, set_user_image, start
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.40"
-
-# Инициализация OpenAI и Telegram API
-opena_ai_api_key=os.getenv('OPENAI_API_KEY')
-openai_client = OpenAI(api_key=opena_ai_api_key)
-
-telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
-
+version="11.0"
 
 
 # URL вебхука
@@ -100,7 +93,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         logging.info([system_message] + history)
         
         
-        bot_reply, additional_system_messages, service_after_message = await get_model_answer(openai_client, update, context, [system_message] + history)
+        bot_reply, additional_system_messages, service_after_message = await get_model_answer(update, context, [system_message] + history)
         
         # Добавляем дополнительную информацию в историю
         if additional_system_messages is not None:
@@ -200,7 +193,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         try:
             # Распознавание речи с использованием OpenAI
-            recognized_text=transcribe_audio(openai_client,temp_file.name)
+            recognized_text=transcribe_audio(temp_file.name)
             
             if recognized_text=="":
                  await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
@@ -278,10 +271,12 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
+
+
 async def main():
     set_bot_version(version)
     # Инициализация приложения
-    application = ApplicationBuilder().token(telegram_token).build()
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Добавление обработчиков
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -298,6 +293,7 @@ async def main():
     application.add_handler(CommandHandler("info", info))
     application.add_handler(CommandHandler("location", add_location_button))
     application.add_handler(CommandHandler("show_notes", show_notes))
+    application.add_handler(CommandHandler("send_smes", send_service_message))
     
     
     
