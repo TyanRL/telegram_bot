@@ -86,8 +86,8 @@ def set_bot_version(bot_version: str) -> None:
     version = bot_version
 
 async def reply_text(update: Update, message:str):
-    escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(escaped_text, parse_mode=parse_mode)
+    #escaped_text = escape_markdown(message, version=2)
+    await update.message.reply_text(message, parse_mode=parse_mode)
 
 async def reply_service_text(update: Update, message:str):
     escaped_text = escape_markdown(message, version=2)
