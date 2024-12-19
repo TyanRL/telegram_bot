@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="10.29"
+version="10.30"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -56,6 +56,7 @@ f"""
 5. Для умного поиска заметок в Elasticsearch используй функцию get_notes_by_query. Поиск можно выполнять по полям Title, Body, Tags. Время создания хранится в формате ISO и UTC (strict_date_optional_time||epoch_millis).
     - Если пользователь запрашивает заметку о событии, используя относительное время, преобразуй его в абсолютное (точная дата, номер недели в году, название месяца) и используй при поиске по search_query.
     - Для поиска заметок по дате создания используй параметры функции start_created_date и end_created_date.
+    - На вопрос о поиске событий в заметках не используй параметры start_created_date и end_created_date, потому что они о создании заметки, а не о событии внутри нее.
 """,
     }
     return system_message
