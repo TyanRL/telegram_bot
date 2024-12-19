@@ -439,8 +439,8 @@ async def get_model_answer(openai_client, update: Update, context: ContextTypes.
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                
-                return answer, additional_system_messages, None
+                (answer, additional_system_messages2, service_after_message) = await get_model_answer(openai_client, update, context, messages, recursion_depth+1)
+                return answer, additional_system_messages+additional_system_messages2, service_after_message
 
             if function_call and (function_call.name == "remove_notes"):
                 function_args = response.choices[0].message.function_call.arguments
