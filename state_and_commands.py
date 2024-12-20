@@ -218,16 +218,16 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if not context.args:
-            await reply_service_text(update, "Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
+            await reply_service_text(update, "Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> ==<user id> или /send_smes <сообщение>")
             return
 
         args = context.args  # Список аргументов после команды
         message_text = ""
         user_id_str = ""
 
-        # Ожидаем "--<user_id>" как последний аргумент или его отсутствие
-        if args[-1].startswith("--"):
-            user_id_str = args.pop(-1)[2:]  # Убираем "--" у идентификатора пользователя
+        # Ожидаем "==<user_id>" как последний аргумент или его отсутствие
+        if args[-1].startswith("=="):
+            user_id_str = args.pop(-1)[2:]  # Убираем "==" у идентификатора пользователя
         
         # Оставшиеся аргументы составляют сообщение
         message_text = ' '.join(args)
@@ -235,6 +235,9 @@ async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await send_service_message_inner(update, message_text, user_id_str)
     except Exception as e:
         logging.info(f"Ошибка при обработке оповещения: {e}")
+        await reply_service_text(update,f"Ошибка при разборе аргументов массового оповещения пользователей.")
+        return
+
 
 
 async def send_service_message_inner(update: Update, message:str, user_id_str=None) -> None:
@@ -248,7 +251,7 @@ async def send_service_message_inner(update: Update, message:str, user_id_str=No
                 user_id = int(user_id_str)
                 temp_user_ids=[user_id]
             except ValueError as e:
-                await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> --<user id> или /send_smes <сообщение>")
+                await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> ==<user id> или /send_smes <сообщение>")
                 return
         
         for user_id in temp_user_ids:
@@ -257,6 +260,9 @@ async def send_service_message_inner(update: Update, message:str, user_id_str=No
                 logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
             except Exception as e:
                 logging.info(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
+                await reply_service_text(update,f"Ошибка при отправке сообщения пользователю {user_id}")
+                return
+        await reply_service_text(update,f"Сообщение успешно отправлено пользователям {temp_user_ids}")
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
