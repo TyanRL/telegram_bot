@@ -245,7 +245,7 @@ async def send_service_notification_inner(update: Update, message:str, user_id_s
     if in_admin_list(user):
        
         temp_user_ids = await get_all()
-        temp_user_ids.extend(await get_admins())
+        temp_user_ids.extend(get_admins())
 
         if user_id_str is not None and user_id_str!= "":
             try:
