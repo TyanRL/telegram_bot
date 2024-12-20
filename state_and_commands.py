@@ -234,7 +234,7 @@ async def send_service_notification(update: Update, context: ContextTypes.DEFAUL
         
         await send_service_notification_inner(update, message_text, user_id_str)
     except Exception as e:
-        logging.info(f"Ошибка при обработке оповещения: {e}")
+        logging.error(f"Ошибка при обработке оповещения: {e}", exc_info=True)
         await reply_service_text(update,f"Ошибка при разборе аргументов массового оповещения пользователей.")
         return
 
@@ -262,8 +262,8 @@ async def send_service_notification_inner(update: Update, message:str, user_id_s
                 await send_service_text(user_id, f"Системное оповещение:\n{message}")
                 logging.info(f"Оповещение успешно отправлено пользователю {user_id}")
             except Exception as e:
-                logging.info(f"Ошибка при отправке оповещение пользователю {user_id}: {e}")
-                await reply_service_text(update,f"Ошибка при отправке оповещение пользователю {user_id}")
+                logging.error(f"Ошибка при отправке оповещение пользователю {user_id}: {e}", exc_info=True)
+                await reply_service_text(update,f"Ошибка при отправке оповещения пользователю {user_id}: {e}")
                 return
         await reply_service_text(update,f"Оповещение успешно отправлено пользователям {temp_user_ids}")
     else:
