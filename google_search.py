@@ -9,12 +9,12 @@ import requests
 API_KEY = os.getenv('GOOGLE_API_KEY')
 CX = os.getenv('GOOGLE_SEARCH_ENGINE_ID')
 
-def search_inner(query, num_results=10):
+def search_inner(query):
     # Создаем сервис с помощью библиотеки google-api-python-client
     service = build("customsearch", "v1", developerKey=API_KEY)
     
     # Выполняем запрос к API
-    res = service.cse().list(q=query, cx=CX, num=num_results).execute()
+    res = service.cse().list(q=query, cx=CX, num=10).execute()
     
     # Парсим результаты
     results = []
@@ -27,9 +27,9 @@ def search_inner(query, num_results=10):
     
     return results
 
-async def get_search_results(query, num_results=15):
+async def get_search_results(query):
     try:
-        results = search_inner(query, num_results)
+        results = search_inner(query)
         result_str=""
         for index, result in enumerate(results, start=1):
             result_str+=f"**{index}. {result['title']}**\n"
@@ -37,7 +37,7 @@ async def get_search_results(query, num_results=15):
             result_str+=f"Snippet: {result['snippet']}\n\n"
         return result_str
     except Exception as e:
-        logging.error(f"Ошибка при распознавании речи: {e}", exc_info=True)
+        logging.error(f"Ошибка при поиске в Гугл: {e}", exc_info=True)
         return None
 def extract_text_from_html(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
