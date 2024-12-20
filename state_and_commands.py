@@ -245,7 +245,8 @@ async def send_service_message_inner(update: Update, message:str, user_id_str=No
     if in_admin_list(user):
        
         temp_user_ids = await get_all()
-        
+        temp_user_ids.extend(await get_admins())
+
         if user_id_str is not None and user_id_str!= "":
             try:
                 user_id = int(user_id_str)
@@ -255,6 +256,8 @@ async def send_service_message_inner(update: Update, message:str, user_id_str=No
                 return
         
         for user_id in temp_user_ids:
+            if user_id == user.id:
+                continue
             try:
                 await send_service_text(user_id, message)
                 logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
