@@ -215,10 +215,10 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
-async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def send_service_notification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if not context.args:
-            await reply_service_text(update, "Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> ==<user id> или /send_smes <сообщение>")
+            await reply_service_text(update, "Вы не задали сервисное оповещение. Команда должна выглядеть так: /send_notification <сообщение> ==<user id> или /send_notification <сообщение>")
             return
 
         args = context.args  # Список аргументов после команды
@@ -232,7 +232,7 @@ async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Оставшиеся аргументы составляют сообщение
         message_text = ' '.join(args)
         
-        await send_service_message_inner(update, message_text, user_id_str)
+        await send_service_notification_inner(update, message_text, user_id_str)
     except Exception as e:
         logging.info(f"Ошибка при обработке оповещения: {e}")
         await reply_service_text(update,f"Ошибка при разборе аргументов массового оповещения пользователей.")
@@ -240,7 +240,7 @@ async def send_service_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-async def send_service_message_inner(update: Update, message:str, user_id_str=None) -> None:
+async def send_service_notification_inner(update: Update, message:str, user_id_str=None) -> None:
     user = update.effective_user
     if in_admin_list(user):
        
@@ -252,20 +252,20 @@ async def send_service_message_inner(update: Update, message:str, user_id_str=No
                 user_id = int(user_id_str)
                 temp_user_ids=[user_id]
             except ValueError as e:
-                await reply_service_text(update,"Вы не задали сервисное сообщение. Команда должна выглядеть так: /send_smes <сообщение> ==<user id> или /send_smes <сообщение>")
+                await reply_service_text(update,"Вы не задали сервисное оповещение. Команда должна выглядеть так: /send_notification <оповещение> ==<user id> или /send_notification <оповещение>")
                 return
         
         for user_id in temp_user_ids:
             if user_id == user.id:
                 continue
             try:
-                await send_service_text(user_id, message)
-                logging.info(f"Сообщение успешно отправлено пользователю {user_id}")
+                await send_service_text(user_id, f"Системное оповещение:\n{message}")
+                logging.info(f"Оповещение успешно отправлено пользователю {user_id}")
             except Exception as e:
-                logging.info(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
-                await reply_service_text(update,f"Ошибка при отправке сообщения пользователю {user_id}")
+                logging.info(f"Ошибка при отправке оповещение пользователю {user_id}: {e}")
+                await reply_service_text(update,f"Ошибка при отправке оповещение пользователю {user_id}")
                 return
-        await reply_service_text(update,f"Сообщение успешно отправлено пользователям {temp_user_ids}")
+        await reply_service_text(update,f"Оповещение успешно отправлено пользователям {temp_user_ids}")
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 

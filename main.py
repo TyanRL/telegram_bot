@@ -19,12 +19,12 @@ from openai import OpenAI
 
 from elastic import get_all_user_notes
 from openai_api import get_model_answer, transcribe_audio
-from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_message, set_bot_version, set_session_info, set_user_image, start
+from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
 from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="11.5"
+version="11.6"
 
 
 # URL вебхука
@@ -293,7 +293,7 @@ async def main():
     application.add_handler(CommandHandler("info", info))
     application.add_handler(CommandHandler("location", add_location_button))
     application.add_handler(CommandHandler("show_notes", show_notes))
-    application.add_handler(CommandHandler("send_smes", send_service_message))
+    application.add_handler(CommandHandler("send_notification", send_service_notification))
     
     
     
