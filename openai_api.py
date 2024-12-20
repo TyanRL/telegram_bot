@@ -17,6 +17,7 @@ from telegram.ext import (
 from openai import OpenAI
 from common_types import dict_to_markdown
 from elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
+from google_search import get_search_results
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from weather import  get_weather_description2, get_weekly_forecast
 from yandex_maps import get_location_by_address
@@ -211,6 +212,22 @@ functions=[
                 "note_ids",
              ]
 
+        }
+    },
+    {
+        "name": "search",
+        "description": "Поискать в Google результаты по запросу пользователя.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "search_query": {
+                    "type": "string",
+                    "description": "Запрос пользователя, по которому будет вестись поиск в интернете"
+                },
+            },
+             "required": [
+                 "search_query",
+             ]
         }
     },
 ]
@@ -461,7 +478,24 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 await remove_notes(note_ids)
                 bot_reply = "Заметки удалены"
                 return bot_reply, additional_system_messages, None  
-
+            
+            if function_call and (function_call.name == "search"):
+                function_args = response.choices[0].message.function_call.arguments
+                logging.info(f"Вызываем функцию поиска в интернете. Аргументы: {function_args}, Тип: {type(function_args)}")
+                function_args_dict = json.loads(function_args)
+                search_query=function_args_dict["search_query"]
+              
+                search_result = get_search_results(search_query)
+                
+                if search_result is not None:
+                    new_system_message={"role": "system", "content": search_result}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
+                    return answer, additional_system_messages+additional_system_messages2, service_after_message
+                else:
+                    bot_reply = "Ошибка при поиске в Google"
+                    return bot_reply, additional_system_messages, None
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
