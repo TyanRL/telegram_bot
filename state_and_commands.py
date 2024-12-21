@@ -15,6 +15,7 @@ from telegram.ext import (
     filters,
 )
 from telegramify_markdown import telegramify
+import telegramify_markdown
 
 from common_types import SafeDict
 from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
@@ -92,7 +93,19 @@ def set_bot_version(bot_version: str) -> None:
     version = bot_version
 
 async def reply_text(update: Update, message:str):
-    escaped_text = await telegramify(message)
+    escaped_text = escape_markdown(message)
+    results = await telegramify(message)
+    for item in results:
+        if isinstance(item,  telegramify_markdown.type.Text):
+           escaped_text=item.content
+        elif isinstance(item, telegramify_markdown.type.File):
+            await update.message.reply_document(item.file_path)
+            logging.info(f"Выслан файл: {item.file_path}")
+        elif isinstance(item, telegramify_markdown.type.Photo):
+            await update.message.reply_document(item.file_path)
+            logging.info(f"Выслано фото: {item.url}")
+
+
     await update.message.reply_text(escaped_text, parse_mode=parse_mode)
 
 async def reply_service_text(update: Update, message:str):
