@@ -14,6 +14,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from telegramify_markdown import telegramify
 
 from common_types import SafeDict
 from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
@@ -91,7 +92,7 @@ def set_bot_version(bot_version: str) -> None:
     version = bot_version
 
 async def reply_text(update: Update, message:str):
-    escaped_text = escape_markdown(message, version=2)
+    escaped_text = await telegramify(message)
     await update.message.reply_text(escaped_text, parse_mode=parse_mode)
 
 async def reply_service_text(update: Update, message:str):
