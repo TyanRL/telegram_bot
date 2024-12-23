@@ -508,7 +508,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
                     
-                    service_message_results=f"{results_count} результатов найдено."
+                    service_message_results=f"Поиск в интернете прошел успешно."
                     new_system_message2={"role": "system", "content": service_message_results}
                     additional_system_messages.append(new_system_message2)
                     messages.append(new_system_message2)
