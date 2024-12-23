@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="13.2"
+version="13.3"
 
 
 # URL вебхука
@@ -152,8 +152,8 @@ async def send_big_text(update: Update, text_to_send):
     history = await user_histories.get(update.effective_user.id, [])
     if len(history)==8 or len(history)==14:
         await reply_service_text(update, 
-f"""Не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
-Бот в своих ответах учитывает предыдущие {max_history_length} сообщений.
+f"""Чтобы уменьшить количество затрачиваемых токенов, не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
+Кроме того, бот в своих ответах учитывает предыдущие {max_history_length} сообщений. И это влияет на ответ. 
 Это было {len(history)} сообщение. 
 """
 )
