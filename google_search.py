@@ -35,10 +35,10 @@ async def get_search_results(query):
             result_str+=f"**{index}. {result['title']}**\n"
             result_str+=f"Link: {result['link']}\n"
             result_str+=f"Snippet: {result['snippet']}\n\n"
-        return result_str
+        return result_str, len(results)
     except Exception as e:
         logging.error(f"Ошибка при поиске в Гугл: {e}", exc_info=True)
-        return None
+        return None, 0
 def extract_text_from_html(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     main_content = soup.find("div", {"id": "main-content"})

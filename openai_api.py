@@ -485,12 +485,19 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 function_args_dict = json.loads(function_args)
                 search_query=function_args_dict["search_query"]
               
-                search_result = await get_search_results(search_query)
+                search_result, results_count = await get_search_results(search_query)
                 
                 if search_result is not None:
                     new_system_message={"role": "system", "content": search_result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
+                    
+                    service_message_results=f"{results_count} результатов найдено."
+                    new_system_message2={"role": "system", "content": service_message_results}
+                    additional_system_messages.append(new_system_message2)
+                    messages.append(new_system_message2)
+                    
+                    await reply_service_text(update, context, service_message_results)
                     (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
                     return answer, additional_system_messages+additional_system_messages2, service_after_message
                 else:
