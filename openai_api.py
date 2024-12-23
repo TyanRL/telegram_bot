@@ -296,7 +296,8 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             logging.error("Recursion depth exceeded")
             return None, None, None
 
-
+        context_tokens=0
+        completion_tokens=0
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
         
@@ -326,6 +327,11 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             partial_param
         )
         
+        if response.usage is not None:
+            context_tokens+= response.usage.prompt_tokens
+            completion_tokens+= response.usage.completion_tokens   
+
+
         if (response.choices and 
             len(response.choices) > 0 and
             hasattr(response.choices[0].message, "function_call")):
@@ -336,7 +342,8 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 # Вызываем функцию запроса геолокации
                 logging.info("Вызываем функцию запроса геолокации")
                 await request_geolocation(update, context)
-                return None, None, None
+                return None, None, (context_tokens, completion_tokens)
+            
             if function_call and (function_call.name == "get_weather_description" or function_call.name == "get_weekly_forecast"):
                 function_args = response.choices[0].message.function_call.arguments
                 logging.info(f"Вызываем функцию запроса погоды. Аргументы: {function_args}, Тип: {type(function_args)}")
@@ -352,8 +359,11 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 new_system_message={"role": "system", "content": result}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
-                return answer, additional_system_messages+additional_system_messages2, service_after_message
+                (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
+                context_tokens+=ctx_t
+                completion_tokens+=comp_t
+                return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
+
 
 
             if function_call and function_call.name == "generate_image":
@@ -382,7 +392,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     new_system_message={"role": "system", "content": f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.)."}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    return None,None, None
+                    return None,None, (context_tokens, completion_tokens)
             
             if function_call and function_call.name == "get_location_by_address":
                 function_args = response.choices[0].message.function_call.arguments
@@ -392,7 +402,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 geoloc = get_location_by_address(address)
                 if geoloc is None:
                     bot_reply = "Не удалось получить геолокацию."
-                    return bot_reply, additional_system_messages, None
+                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
                 else:
                     (latitude, longitude) = geoloc
                     result = f"Геолокация {address} установлена. Широта: {latitude}, Долгота: {longitude}"
@@ -400,8 +410,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
-                    return answer, additional_system_messages+additional_system_messages2, service_after_message
+                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
+                    context_tokens+=ctx_t
+                    completion_tokens+=comp_t
+                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
 
             if function_call and (function_call.name == "add_note"):
                 logging.info(f"Function call arguments 1: {response.choices[0]}")
@@ -424,7 +436,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 add_note(update.effective_user.id,title, body, tags)
                 await reply_service_text(update,f"Заметка '{title}' добавлена.")
                 bot_reply = "Я сделал :)"
-                return bot_reply, additional_system_messages, None
+                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
                 
 
             if function_call and (function_call.name == "get_all_user_notes"):
@@ -433,7 +445,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
-                    return None, None, None
+                    return None, None, (context_tokens, completion_tokens)
                 
                 answer, system_message_body = get_notes_text(documents)
 
@@ -442,7 +454,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 messages.append(new_system_message)
                 
                 await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
-                return answer, additional_system_messages, None
+                return answer, additional_system_messages,(context_tokens, completion_tokens)
             
             if function_call and (function_call.name == "get_notes_by_query"):
                 function_args = response.choices[0].message.function_call.arguments
@@ -456,14 +468,16 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
-                    return None, None, None
+                    return None, None, (context_tokens, completion_tokens)
                 
                 answer, system_message_body = get_notes_text(documents)
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
-                return answer, additional_system_messages+additional_system_messages2, service_after_message
+                (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
+                context_tokens+=ctx_t
+                completion_tokens+=comp_t
+                return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
 
             if function_call and (function_call.name == "remove_notes"):
                 function_args = response.choices[0].message.function_call.arguments
@@ -477,7 +491,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 note_ids=[int(x) for x in function_args_dict["note_ids"]]
                 await remove_notes(note_ids)
                 bot_reply = "Заметки удалены"
-                return bot_reply, additional_system_messages, None  
+                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
             
             if function_call and (function_call.name == "search"):
                 function_args = response.choices[0].message.function_call.arguments
@@ -487,6 +501,8 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
               
                 search_result, results_count = await get_search_results(search_query)
                 
+             
+
                 if search_result is not None:
                     new_system_message={"role": "system", "content": search_result}
                     additional_system_messages.append(new_system_message)
@@ -498,20 +514,23 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     messages.append(new_system_message2)
                     
                     await reply_service_text(update, context, service_message_results)
-                    (answer, additional_system_messages2, service_after_message) = await get_model_answer(update, context, messages, recursion_depth+1)
-                    return answer, additional_system_messages+additional_system_messages2, service_after_message
+                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
+                    context_tokens+=ctx_t
+                    completion_tokens+=comp_t
+                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
                 else:
                     bot_reply = "Ошибка при поиске в Google"
-                    return bot_reply, additional_system_messages, None
+                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         bot_reply = response.choices[0].message.content.strip()
-        return bot_reply, additional_system_messages, None
+
+        return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
 
     except Exception as e:
         # Логируем ошибки
         logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
-        return "Произошла ошибка при обработке запроса.", None, None
+        return "Произошла ошибка при обработке запроса.", None, (0,0)
 
 

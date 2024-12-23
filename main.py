@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="12.5"
+version="13.0"
 
 
 # URL вебхука
@@ -84,7 +84,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                 })
             except Exception as e:
                 logging.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
-                return "Извините, произошла ошибка при обработке вашего запроса c изображением."
+                return "Извините, произошла ошибка при обработке вашего запроса c изображением.", None
             finally:
                 await set_user_image(update.effective_user.id, None)
         else:
@@ -96,7 +96,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         logging.info([system_message] + history)
         
         
-        bot_reply, additional_system_messages, service_after_message = await get_model_answer(update, context, [system_message] + history)
+        bot_reply, additional_system_messages, (ctx_token, completion_token) = await get_model_answer(update, context, [system_message] + history)
         
         # Добавляем дополнительную информацию в историю
         if additional_system_messages is not None:
@@ -111,10 +111,11 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         await user_histories.set(update.effective_user.id, history)
         logging.info(f"История пользователя обновлена: {history}")
         
-        return bot_reply
+        return bot_reply, f"Токенов: использовано - {ctx_token}, сгенерировано - {completion_token}."
+
     except Exception as e:
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
-        return "Извините, произошла ошибка при обработке вашего запроса."
+        return "Извините, произошла ошибка при обработке вашего запроса.", None
 
 async def get_history(user_id, user_message):
     history = await user_histories.get(user_id, [])
@@ -167,11 +168,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return await handle_message_inner(update, context, user_message)
 
 async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
-    bot_reply = await get_bot_reply(update, context, user_message)
+    bot_reply, token_service_message = await get_bot_reply(update, context, user_message)
     if bot_reply is None or len(bot_reply) == 0:
         return
     await send_big_text(update, bot_reply)
     await set_session_info(update.effective_user)
+    await reply_service_text(update, token_service_message)
+
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
