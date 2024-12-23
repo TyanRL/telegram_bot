@@ -513,7 +513,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     additional_system_messages.append(new_system_message2)
                     messages.append(new_system_message2)
                     
-                    await reply_service_text(update, context, service_message_results)
+                    await reply_service_text(update, service_message_results)
                     (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
                     context_tokens+=ctx_t
                     completion_tokens+=comp_t
