@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="13.3"
+version="13.4"
 
 
 # URL вебхука
@@ -173,7 +173,8 @@ async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await send_big_text(update, bot_reply)
     await set_session_info(update.effective_user)
-    await reply_service_text(update, token_service_message)
+    if token_service_message is not None and len(token_service_message)!= 0:
+        await reply_service_text(update, token_service_message)
 
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
