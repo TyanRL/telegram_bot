@@ -373,12 +373,12 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 image_url = generate_image(openai_client, function_args_dict["prompt"], function_args_dict["style"])
                 if image_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
-                    return bot_reply, additional_system_messages, None
+                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
                 else:
                     # Если генерация прошла успешно, то отправляем пользователю картинку
                     await update.message.reply_photo(photo=image_url)
                     bot_reply = "Я сделал :)"
-                    return bot_reply, additional_system_messages, None
+                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
             
             if function_call and function_call.name == "change_model":
                 function_args = response.choices[0].message.function_call.arguments
