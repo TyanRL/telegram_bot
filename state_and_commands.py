@@ -224,7 +224,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if await in_user_list(user):
         model = await get_user_model(update.effective_user.id)
-        info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация картинок, распознавание голосовых сообщений,  распознавание картинок, умное сохранение и выдача произвольной текстовой информации в заметках - личный секретарь."
+        info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация картинок, распознавание голосовых сообщений,  распознавание картинок, поиск в интернете с помощью Google, умное сохранение и выдача произвольной текстовой информации в заметках - личный секретарь."
         await reply_service_text(update,info)
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")

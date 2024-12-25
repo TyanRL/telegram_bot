@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="13.5"
+version="13.6"
 
 
 # URL вебхука
