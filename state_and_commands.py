@@ -6,7 +6,7 @@ import os
 
 from zoneinfo import ZoneInfo
 from enum import Enum, unique
-from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot, User
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -65,10 +65,17 @@ async def get_user_image(user_id):
 def get_history():
     return user_histories
 
-async def set_session_info(user) -> None:
+async def set_session_info(user:User) -> None:
     # Получение текущего времени в формате UTC
     local_time = get_local_time()
-    await save_last_session(user.id, user.username, local_time)
+    username= user.username
+    if username is None or username == "":
+        if user.first_name is not None and user.first_name!= "":
+            username = user.first_name
+        if user.last_name is not None and user.last_name!= "":
+            username += " "+user.last_name
+  
+    await save_last_session(user.id, username, local_time)
 
 def get_local_time():
     utc_time = datetime.datetime.now(ZoneInfo("UTC"))    
