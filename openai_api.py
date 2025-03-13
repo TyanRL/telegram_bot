@@ -539,8 +539,8 @@ async def get_simple_answer(messages, model_name):
         partial_param = partial(
                 openai_client.responses.create,
                 model=OpenAI_Models.DEFAULT_MODEL.value,
-                messages=messages,
-                max_tokens=16384,
+                input=messages,
+                max_output_tokens=16384,
                 tools=[{"type": "web_search_preview"}],
             )
     else:
