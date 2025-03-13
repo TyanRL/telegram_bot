@@ -214,22 +214,22 @@ functions=[
 
         }
     },
-#    {
-#       "name": "search",
-#       "description": "Поискать в Google результаты по запросу пользователя.",
-#       "parameters": {
-#           "type": "object",
-#          "properties": {
-#               "search_query": {
-#                    "type": "string",
-#                    "description": "Запрос пользователя, по которому будет вестись поиск в интернете"
-#                },
-#            },
-#             "required": [
-#                 "search_query",
-#             ]
-#       }
-#    },
+    {
+       "name": "search",
+       "description": "Поискать в Google результаты по запросу пользователя.",
+       "parameters": {
+           "type": "object",
+          "properties": {
+               "search_query": {
+                    "type": "string",
+                    "description": "Запрос пользователя, по которому будет вестись поиск в интернете"
+                },
+            },
+             "required": [
+                 "search_query",
+             ]
+       }
+    },
 ]
 
 
@@ -300,39 +300,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         completion_tokens=0
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
-         # Опциональные настройки инструмента веб-поиска:
-        web_search_options_params={}
-        web_search_options_params["search_context_size"] = "medium"  # глубина поиска: low, medium или high
-        web_search_options_params["user_location"] = {
-                        "type": "approximate",
-                        "approximate": {"country": "RU"}  # страна для локализации результатов
-                        }
-        partial_param = partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=messages,
-                functions=functions,
-                function_call="auto",  
-                max_tokens=16384,
-                web_search_options=web_search_options_params
-            )
-
-        # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
-        if model_name == OpenAI_Models.O1_MINI.value:
-            filtered_messages = [message for message in messages if message["role"] != "system"]
-            partial_param = partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=filtered_messages,
-                max_completion_tokens=32768
-            )
-             
-
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            partial_param
-        )
+        response = await get_simple_answer(messages, model_name)
         
         if response.usage is not None:
             context_tokens+= response.usage.prompt_tokens
@@ -501,33 +469,41 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
             
             if function_call and (function_call.name == "search"):
-                function_args = response.choices[0].message.function_call.arguments
-                logging.info(f"Вызываем функцию поиска в интернете. Аргументы: {function_args}, Тип: {type(function_args)}")
-                function_args_dict = json.loads(function_args)
-                search_query=function_args_dict["search_query"]
-              
-                search_result, results_count = await get_search_results(search_query)
+                logging.info(f"Вызываем модель с поиском в интернете.")
+                response = await get_simple_answer(messages, model_name)
+        
+                if response.usage is not None:
+                    context_tokens+= response.usage.prompt_tokens
+                    completion_tokens+= response.usage.completion_tokens
                 
-             
+                bot_reply = response.choices[0].message.content.strip()
+                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
 
-                if search_result is not None:
-                    new_system_message={"role": "system", "content": search_result}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
-                    
-                    service_message_results=f"Поиск в интернете прошел успешно."
-                    new_system_message2={"role": "system", "content": service_message_results}
-                    additional_system_messages.append(new_system_message2)
-                    messages.append(new_system_message2)
-                    
-                    await reply_service_text(update, service_message_results)
-                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
-                    context_tokens+=ctx_t
-                    completion_tokens+=comp_t
-                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
-                else:
-                    bot_reply = "Ошибка при поиске в Google"
-                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+
+#                function_args = response.choices[0].message.function_call.arguments
+#                logging.info(f"Вызываем функцию с поиском в интернете. Аргументы: {function_args}, Тип: {type(function_args)}")
+#                function_args_dict = json.loads(function_args)
+#                search_query=function_args_dict["search_query"]
+#                search_result, results_count = await get_search_results(search_query)
+
+#                if search_result is not None:
+#                    new_system_message={"role": "system", "content": search_result}
+#                    additional_system_messages.append(new_system_message)
+#                    messages.append(new_system_message)
+#                    
+#                    service_message_results=f"Поиск в интернете прошел успешно."
+#                    new_system_message2={"role": "system", "content": service_message_results}
+#                    additional_system_messages.append(new_system_message2)
+#                    messages.append(new_system_message2)
+#                    
+#                    await reply_service_text(update, service_message_results)
+#                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
+#                    context_tokens+=ctx_t
+#                    completion_tokens+=comp_t
+#                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
+#                else:
+#                    bot_reply = "Ошибка при поиске в Google"
+#                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
@@ -539,5 +515,51 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         # Логируем ошибки
         logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
         return "Произошла ошибка при обработке запроса.", None, (0,0)
+
+async def get_simple_answer(messages, model_name):
+
+
+        # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
+    if model_name == OpenAI_Models.O1_MINI.value:
+        filtered_messages = [message for message in messages if message["role"] != "system"]
+        partial_param = partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=filtered_messages,
+                max_completion_tokens=32768
+            )
+    elif model_name == OpenAI_Models.SEARCH_MODEL.value:
+        # Опциональные настройки инструмента веб-поиска:
+        web_search_options_params={}
+        web_search_options_params["search_context_size"] = "medium"  # глубина поиска: low, medium или high
+        web_search_options_params["user_location"] = {
+                        "type": "approximate",
+                        "approximate": {"country": "RU"}  # страна для локализации результатов
+                        }
+        partial_param = partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                max_tokens=16384,
+                web_search_options=web_search_options_params,
+            )
+    else:
+        partial_param = partial(
+                openai_client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                functions=functions,
+                function_call="auto",  
+                max_tokens=16384,
+            )
+             
+
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+            None,
+            partial_param
+        )
+    
+    return response
 
 
