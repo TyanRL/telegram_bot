@@ -541,8 +541,7 @@ async def get_simple_answer(messages, model_name):
                 model=OpenAI_Models.DEFAULT_MODEL.value,
                 input=messages,
                 max_output_tokens=16384,
-                tools=[{"type": "web_search_preview",
-                        "params": web_search_options_params}],
+                tools=[{"type": "web_search_preview"}],
             )
     else:
         partial_param = partial(
