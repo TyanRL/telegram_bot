@@ -214,22 +214,22 @@ functions=[
 
         }
     },
-    {
-        "name": "search",
-        "description": "Поискать в Google результаты по запросу пользователя.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "search_query": {
-                    "type": "string",
-                    "description": "Запрос пользователя, по которому будет вестись поиск в интернете"
-                },
-            },
-             "required": [
-                 "search_query",
-             ]
-        }
-    },
+#    {
+#       "name": "search",
+#       "description": "Поискать в Google результаты по запросу пользователя.",
+#       "parameters": {
+#           "type": "object",
+#          "properties": {
+#               "search_query": {
+#                    "type": "string",
+#                    "description": "Запрос пользователя, по которому будет вестись поиск в интернете"
+#                },
+#            },
+#             "required": [
+#                 "search_query",
+#             ]
+#       }
+#    },
 ]
 
 
@@ -300,14 +300,21 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         completion_tokens=0
         additional_system_messages=[]
         model_name=await get_user_model(update.effective_user.id)
-        
+         # Опциональные настройки инструмента веб-поиска:
+        web_search_options_params={}
+        web_search_options_params["search_context_size"] = "medium"  # глубина поиска: low, medium или high
+        web_search_options_params["user_location"] = {
+                        "type": "approximate",
+                        "approximate": {"country": "RU"}  # страна для локализации результатов
+                        }
         partial_param = partial(
                 openai_client.chat.completions.create,
                 model=model_name,
                 messages=messages,
                 functions=functions,
                 function_call="auto",  
-                max_tokens=16384
+                max_tokens=16384,
+                web_search_options=web_search_options_params
             )
 
         # так как модели o1 не поддерживают сиcтемные сообщения то удалим их

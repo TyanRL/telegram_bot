@@ -22,7 +22,7 @@ from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_lis
 from telegram.helpers import escape_markdown
 @unique
 class OpenAI_Models(Enum):
-    DEFAULT_MODEL="gpt-4o"
+    DEFAULT_MODEL="gpt-4o-search-preview"
     O1_MINI ="o1-mini"
 
 parse_mode="MarkdownV2"
