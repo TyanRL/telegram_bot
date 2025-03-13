@@ -473,8 +473,8 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 response = await get_simple_answer(messages, OpenAI_Models.SEARCH_MODEL.value)
         
                 if response.usage is not None:
-                    context_tokens+= response.usage.prompt_tokens
-                    completion_tokens+= response.usage.completion_tokens
+                    context_tokens+= response.usage.input_tokens
+                    completion_tokens+= response.usage.output_tokens
                 
                 bot_reply = response.output_text.strip()
                 return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
@@ -541,7 +541,8 @@ async def get_simple_answer(messages, model_name):
                 model=OpenAI_Models.DEFAULT_MODEL.value,
                 input=messages,
                 max_output_tokens=16384,
-                tools=[{"type": "web_search_preview"}],
+                tools=[{"type": "web_search_preview",
+                        "params": web_search_options_params}],
             )
     else:
         partial_param = partial(
