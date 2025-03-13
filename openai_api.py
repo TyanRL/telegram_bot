@@ -470,7 +470,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             
             if function_call and (function_call.name == "search"):
                 logging.info(f"Вызываем модель с поиском в интернете.")
-                response = await get_simple_answer(messages, model_name)
+                response = await get_simple_answer(messages, OpenAI_Models.SEARCH_MODEL.value)
         
                 if response.usage is not None:
                     context_tokens+= response.usage.prompt_tokens
