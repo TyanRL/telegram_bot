@@ -476,7 +476,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     context_tokens+= response.usage.prompt_tokens
                     completion_tokens+= response.usage.completion_tokens
                 
-                bot_reply = response.choices[0].message.content.strip()
+                bot_reply = response.output_text.strip()
                 return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
 
 
@@ -537,11 +537,11 @@ async def get_simple_answer(messages, model_name):
                         "approximate": {"country": "RU"}  # страна для локализации результатов
                         }
         partial_param = partial(
-                openai_client.chat.completions.create,
-                model=model_name,
+                openai_client.responses.create,
+                model=OpenAI_Models.DEFAULT_MODEL.value,
                 messages=messages,
                 max_tokens=16384,
-                web_search_options=web_search_options_params,
+                tools=[{"type": "web_search_preview"}],
             )
     else:
         partial_param = partial(
