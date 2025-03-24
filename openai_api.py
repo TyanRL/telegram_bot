@@ -110,7 +110,7 @@ functions=[
                 }
             },
              "required": [
-                 "prompt",
+                 "prompt", "style"
              ]
         }
     },
