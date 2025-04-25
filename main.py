@@ -17,11 +17,11 @@ from telegram.ext import (
 from aiohttp import web
 from openai import OpenAI
 
-from elastic import get_all_user_notes
-from openai_api import get_model_answer, transcribe_audio
-from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_history, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
-from sql import get_admins, in_user_list
-from yandex_maps import get_address
+from utils.elastic import get_all_user_notes
+from openai_api import get_model_answer, transcribe_audio, ModelAnswer
+from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
+from utils.sql import get_admins, in_user_list
+from utils.yandex_maps import get_address
 
 
 version="16.0"
@@ -59,19 +59,23 @@ f"""
 
 max_history_length = 15  # Максимальное количество сообщений в истории
 
-user_histories=get_history()
+user_histories=get_all_histories()
 
 administrators_ids = get_admins()
 
-async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
+async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message)->tuple[str|None, str|None]:
     try:
-        imgage_dict = await get_user_image(update.effective_user.id)
+        user=update.effective_user
+        if user is None:
+            return None,None
+        imgage_dict = await get_user_image(user.id)
+        # Получение истории сообщений пользователя
         if imgage_dict is not None:
             try:
                 # Итоговая строка для использования
-                img_type=imgage_dict["image_type"]
-                img_b64_str = imgage_dict["image"]
-                history = await user_histories.get(update.effective_user.id, [])
+                img_type=imgage_dict["image_type"] # type: ignore
+                img_b64_str = imgage_dict["image"] # type: ignore
+                history = await user_histories.get(user.id, []) # type: ignore
                 history.append({
                     "role": "user",
                     "content": [
@@ -86,32 +90,33 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                 logging.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
                 return "Извините, произошла ошибка при обработке вашего запроса c изображением.", None
             finally:
-                await set_user_image(update.effective_user.id, None)
+                await set_user_image(user.id, None)
         else:
             # Получаем или создаем историю сообщений для пользователя
-            history = await get_history(update.effective_user.id, user_message)
+            history = await get_history(user.id, user_message)
     
    
         system_message= get_system_message()
         logging.info([system_message] + history)
         
         
-        bot_reply, additional_system_messages, (ctx_token, completion_token) = await get_model_answer(update, context, [system_message] + history)
+        m_a = await get_model_answer(update, context, [system_message] + history)
+        
         
         # Добавляем дополнительную информацию в историю
-        if additional_system_messages is not None:
-            for message in additional_system_messages:
+        if m_a.additional_system_messages is not None:
+            for message in m_a.additional_system_messages:
                 history.append(message)
                 logging.info(f"В историю добавлена новая системная информация: {message}")
         # Добавляем ответ бота в историю
-        if bot_reply is not None:
-            history.append({"role": "assistant", "content": bot_reply})
+        if m_a.bot_reply is not None:
+            history.append({"role": "assistant", "content": m_a.bot_reply})
         
         # Обновляем историю пользователя
-        await user_histories.set(update.effective_user.id, history)
+        await user_histories.set(user.id, history)
         logging.info(f"История пользователя обновлена: {history}")
         
-        return bot_reply, f"Токенов: использовано - {ctx_token}, сгенерировано - {completion_token}."
+        return m_a.bot_reply, f"Токенов: использовано - {m_a.ctx_token}, сгенерировано - {m_a.completion_token}."
 
     except Exception as e:
         logging.error(f"Ошибка при обращении к OpenAI API: {e}")
@@ -143,13 +148,16 @@ async def get_history(user_id, user_message):
     return history
 
 async def send_big_text(update: Update, text_to_send):
+    if update.effective_user is None:
+        return
+    user = update.effective_user
     if len(text_to_send) > 4096:
         messages = [text_to_send[i:i+4096] for i in range(0, len(text_to_send), 4096)]
         for msg in messages:
             await reply_text(update,msg)
     else:
         await reply_text(update,text_to_send)
-    history = await user_histories.get(update.effective_user.id, [])
+    history = await user_histories.get(user.id, [])
     if len(history)==8 or len(history)==14:
         await reply_service_text(update, 
 f"""Чтобы уменьшить количество затрачиваемых токенов, не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
@@ -161,6 +169,10 @@ f"""Чтобы уменьшить количество затрачиваемы�
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    if update.message is None:
+        return
+    if user is None:
+        return
     user_message = update.message.text
     if not await in_user_list(user):
         await not_authorized_message(update, user)
@@ -168,11 +180,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return await handle_message_inner(update, context, user_message)
 
 async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
+    user = update.effective_user
+    if user is None:
+        return
     bot_reply, token_service_message = await get_bot_reply(update, context, user_message)
     if bot_reply is None or len(bot_reply) == 0:
         return
     await send_big_text(update, bot_reply)
-    await set_session_info(update.effective_user)
+    await set_session_info(user)
     if token_service_message is not None:
         await reply_service_text(update, token_service_message)
 
@@ -180,6 +195,10 @@ async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
     user = update.effective_user
+    if update.message is None:
+        return
+    if user is None:
+        return
     voice = update.message.voice
 
     if not voice:
@@ -222,6 +241,10 @@ async def set_telegram_webhook(application):
 # Обработка геолокации
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
+        if update.message is None:
+            return
+        if update.effective_user is None:
+            return
         if update.message.location:
             history = await user_histories.get(update.effective_user.id, [])
             latitude = update.message.location.latitude
@@ -237,6 +260,10 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
+        if update.message is None:
+            return
+        if update.effective_user is None:
+            return
         # Получаем файл изображения
         photo_file = await update.message.photo[-1].get_file()
         photo_path = f'user_{update.effective_user.id}_image.jpg'
@@ -262,8 +289,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logging.error(f"Ошибка в обработчике изображений: {e}")
 
 async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if await in_user_list(user):
+    if update.message is None:
+            return
+    if update.effective_user is None:
+            return
+    if await in_user_list(update.effective_user):
 
         documents = get_all_user_notes(update.effective_user.id)
         if len(documents) == 0:

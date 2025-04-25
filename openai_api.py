@@ -15,12 +15,14 @@ from telegram.ext import (
     filters,
 )
 from openai import OpenAI
+from openai.types.chat import ChatCompletion
+from openai.types.responses import Response
 from common_types import dict_to_markdown
-from elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
-from google_search import get_search_results
+from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
+from utils.google_search import get_search_results
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
-from weather import  get_weather_description2, get_weekly_forecast
-from yandex_maps import get_location_by_address
+from utils.weather import  get_weather_description2, get_weekly_forecast
+from utils.yandex_maps import get_location_by_address
 
 
 
@@ -30,7 +32,17 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 
 MAXIMUM_RECURSION_ANSWER_DEPTH = 10
 
+class ModelAnswer():
+    bot_reply: str|None
+    additional_system_messages: list[dict]
+    ctx_token: int
+    completion_token: int
 
+    def __init__(self, bot_reply: str|None, additional_system_messages: list[dict]=[], ctx_token: int=0, completion_token: int=0):
+        self.bot_reply = bot_reply
+        self.additional_system_messages = additional_system_messages
+        self.ctx_token = ctx_token
+        self.completion_token = completion_token
 
 # Описываем доступные функции для модели:
 functions=[
@@ -122,8 +134,8 @@ functions=[
             "properties": {
                 "model": {
                     "type": "string",
-                    "enum": [f"{OpenAI_Models.DEFAULT_MODEL.value}", f"{OpenAI_Models.O1_MINI.value}"],
-                    "description": f"'{OpenAI_Models.DEFAULT_MODEL.value}' - основная используемая модель широкого назначения. '{OpenAI_Models.O1_MINI.value}' - модель с рассуждениями, подходящая для решения логических задач, написания кода и научных целей. Не имеет function calling, не может работать с изображениями. Если пользователя не устраивают текущие результаты, то можно сменить модель."
+                    "enum": [f"{OpenAI_Models.DEFAULT_MODEL.value}", f"{OpenAI_Models.o4_MINI.value}"],
+                    "description": f"'{OpenAI_Models.DEFAULT_MODEL.value}' - основная используемая модель широкого назначения. '{OpenAI_Models.o4_MINI.value}' - модель с рассуждениями, подходящая для решения логических задач, написания кода и научных целей. Не имеет function calling, не может работать с изображениями. Если пользователя не устраивают текущие результаты, то можно сменить модель."
                  },
             },
             "required": [
@@ -288,13 +300,17 @@ def transcribe_audio(audio_filename):
 
 
 
-async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, messages, recursion_depth=0)->Tuple[str, list[dict], str]:
+async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, messages: list[dict], recursion_depth=0)->ModelAnswer:
     try:
         logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
         if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
             logging.error("Recursion depth exceeded")
-            return None, None, None
+            return ModelAnswer(None)
+
+        if update.effective_user is None:
+            logging.error("User is None")
+            return ModelAnswer(None)
 
         context_tokens=0
         completion_tokens=0
@@ -302,13 +318,13 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         model_name=await get_user_model(update.effective_user.id)
         response = await get_simple_answer(messages, model_name)
         
-        if response.usage is not None:
+        if isinstance(response, ChatCompletion) and response.usage is not None:
             context_tokens+= response.usage.prompt_tokens
             completion_tokens+= response.usage.completion_tokens   
 
 
-        if (response.choices and 
-            len(response.choices) > 0 and
+        if (isinstance(response, ChatCompletion) and response.choices and 
+            len(response.choices) > 0 and response.choices[0].message is not None and 
             hasattr(response.choices[0].message, "function_call")):
     
             function_call = response.choices[0].message.function_call
@@ -317,10 +333,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 # Вызываем функцию запроса геолокации
                 logging.info("Вызываем функцию запроса геолокации")
                 await request_geolocation(update, context)
-                return None, None, (context_tokens, completion_tokens)
+                return ModelAnswer(None,[],context_tokens,completion_tokens)
             
             if function_call and (function_call.name == "get_weather_description" or function_call.name == "get_weekly_forecast"):
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию запроса погоды. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 latitude=function_args_dict["latitude"]
@@ -334,50 +350,55 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 new_system_message={"role": "system", "content": result}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
-                context_tokens+=ctx_t
-                completion_tokens+=comp_t
-                return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
+                inner_answer = await get_model_answer(update, context, messages, recursion_depth+1)
+                context_tokens+=inner_answer.ctx_token
+                completion_tokens+=inner_answer.completion_token
+                return ModelAnswer(inner_answer.bot_reply,
+                                   additional_system_messages+inner_answer.additional_system_messages,
+                                   context_tokens,completion_tokens)
 
 
 
             if function_call and function_call.name == "generate_image":
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию генерации изображения. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 image_url = generate_image(openai_client, function_args_dict["prompt"], function_args_dict["style"])
                 if image_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
-                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                    return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
                 else:
                     # Если генерация прошла успешно, то отправляем пользователю картинку
-                    await update.message.reply_photo(photo=image_url)
+                    await update.message.reply_photo(photo=image_url) # type: ignore
                     bot_reply = "Я сделал :)"
-                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                    return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
             
             if function_call and function_call.name == "change_model":
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию смены модели. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 new_model_name_str = function_args_dict["model"]
                 new_model_name = get_OpenAI_Models(new_model_name_str)
                 if new_model_name_str!=model_name:
                     await set_user_model(update.effective_user.id,new_model_name)
-                    await reply_service_text(update, f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.). Для возврата на стандартную модель сбросьте контекст (/reset)")
-                    new_system_message={"role": "system", "content": f"Модель успешно изменена на {new_model_name_str}. Модель не поддерживает работу с инструментами (погода, геолокация, картинки и т.д.)."}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
-                    return None,None, (context_tokens, completion_tokens)
+                    await reply_service_text(update, f"Модель успешно изменена на {new_model_name_str}. Для возврата на стандартную модель сбросьте контекст (/reset)")
+                    return ModelAnswer(None,[],context_tokens,completion_tokens)
             
             if function_call and function_call.name == "get_location_by_address":
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию получения геолокации по адресу. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 address=function_args_dict["address"]
                 geoloc = get_location_by_address(address)
                 if geoloc is None:
                     bot_reply = "Не удалось получить геолокацию."
-                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                    return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
                 else:
                     (latitude, longitude) = geoloc
                     result = f"Геолокация {address} установлена. Широта: {latitude}, Долгота: {longitude}"
@@ -385,18 +406,20 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     new_system_message={"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
-                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
-                    context_tokens+=ctx_t
-                    completion_tokens+=comp_t
-                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
+                    inner_answer = await get_model_answer(update, context, messages, recursion_depth+1)
+                    context_tokens+=inner_answer.ctx_token
+                    completion_tokens+=inner_answer.completion_token
+                    return ModelAnswer(inner_answer.bot_reply,
+                                   additional_system_messages+inner_answer.additional_system_messages,
+                                   context_tokens,completion_tokens)
 
             if function_call and (function_call.name == "add_note"):
                 logging.info(f"Function call arguments 1: {response.choices[0]}")
                 logging.info(f"Function call arguments 2: {response.choices[0].message}")
-                logging.info(f"Function call arguments 3: {response.choices[0].message.function_call}")
-                logging.info(f"Function call arguments 4: {response.choices[0].message.function_call.arguments}")
+                logging.info(f"Function call arguments 3: {function_call}")
+                logging.info(f"Function call arguments 4: {function_call.arguments}")
 
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию добавления заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
                 # Если function_args это строка, парсим её
                 if isinstance(function_args, str):
@@ -411,7 +434,9 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 add_note(update.effective_user.id,title, body, tags)
                 await reply_service_text(update,f"Заметка '{title}' добавлена.")
                 bot_reply = "Я сделал :)"
-                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
                 
 
             if function_call and (function_call.name == "get_all_user_notes"):
@@ -420,7 +445,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
-                    return None, None, (context_tokens, completion_tokens)
+                    return ModelAnswer(None,[],context_tokens,completion_tokens)
                 
                 answer, system_message_body = get_notes_text(documents)
 
@@ -429,10 +454,12 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 messages.append(new_system_message)
                 
                 await reply_service_text(update,f"Найдено {len(documents)} заметки(-ок).")
-                return answer, additional_system_messages,(context_tokens, completion_tokens)
+                return ModelAnswer(answer,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
             
             if function_call and (function_call.name == "get_notes_by_query"):
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию поиска заметки. Аргументы: {function_args}, Тип: {type(function_args)}")
                 function_args_dict = json.loads(function_args)
                 search_query=function_args_dict["search_query"]
@@ -443,19 +470,21 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
                 if len(documents) == 0:
                     await reply_service_text(update,"Заметки не найдены.")
-                    return None, None, (context_tokens, completion_tokens)
+                    return ModelAnswer(None,[],context_tokens,completion_tokens)
                 
                 answer, system_message_body = get_notes_text(documents)
                 new_system_message={"role": "system", "content": system_message_body}
                 additional_system_messages.append(new_system_message)
                 messages.append(new_system_message)
-                (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
-                context_tokens+=ctx_t
-                completion_tokens+=comp_t
-                return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
+                inner_answer = await get_model_answer(update, context, messages, recursion_depth+1)
+                context_tokens+=inner_answer.ctx_token
+                completion_tokens+=inner_answer.completion_token
+                return ModelAnswer(inner_answer.bot_reply,
+                                   additional_system_messages+inner_answer.additional_system_messages,
+                                   context_tokens,completion_tokens)
 
             if function_call and (function_call.name == "remove_notes"):
-                function_args = response.choices[0].message.function_call.arguments
+                function_args = function_call.arguments
                 logging.info(f"Вызываем функцию удаления заметок. Аргументы: {function_args}, Тип: {type(function_args)}")
                 # Если function_args это строка, парсим её
                 if isinstance(function_args, str):
@@ -466,61 +495,43 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 note_ids=[int(x) for x in function_args_dict["note_ids"]]
                 await remove_notes(note_ids)
                 bot_reply = "Заметки удалены"
-                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
             
             if function_call and (function_call.name == "search"):
                 logging.info(f"Вызываем модель с поиском в интернете.")
                 response = await get_simple_answer(messages, OpenAI_Models.SEARCH_MODEL.value)
         
-                if response.usage is not None:
+                if isinstance(response, Response) and response.usage is not None:
                     context_tokens+= response.usage.input_tokens
                     completion_tokens+= response.usage.output_tokens
-                
-                bot_reply = response.output_text.strip()
-                return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
-
-
-#                function_args = response.choices[0].message.function_call.arguments
-#                logging.info(f"Вызываем функцию с поиском в интернете. Аргументы: {function_args}, Тип: {type(function_args)}")
-#                function_args_dict = json.loads(function_args)
-#                search_query=function_args_dict["search_query"]
-#                search_result, results_count = await get_search_results(search_query)
-
-#                if search_result is not None:
-#                    new_system_message={"role": "system", "content": search_result}
-#                    additional_system_messages.append(new_system_message)
-#                    messages.append(new_system_message)
-#                    
-#                    service_message_results=f"Поиск в интернете прошел успешно."
-#                    new_system_message2={"role": "system", "content": service_message_results}
-#                    additional_system_messages.append(new_system_message2)
-#                    messages.append(new_system_message2)
-#                    
-#                    await reply_service_text(update, service_message_results)
-#                    (answer, additional_system_messages2, (ctx_t, comp_t)) = await get_model_answer(update, context, messages, recursion_depth+1)
-#                    context_tokens+=ctx_t
-#                    completion_tokens+=comp_t
-#                    return answer, additional_system_messages+additional_system_messages2, (context_tokens, completion_tokens)
-#                else:
-#                    bot_reply = "Ошибка при поиске в Google"
-#                    return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+                    bot_reply = response.output_text.strip()
+                    return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
-        bot_reply = response.choices[0].message.content.strip()
+        if isinstance(response,ChatCompletion) and response.choices is not None and len(response.choices) > 0 and response.choices[0].message.content is not None:
+            bot_reply = response.choices[0].message.content.strip()
+        else:
+            bot_reply = "Произошла ошибка при обработке запроса."
 
-        return bot_reply, additional_system_messages, (context_tokens, completion_tokens)
+        return ModelAnswer(bot_reply,
+                                additional_system_messages,
+                                context_tokens,completion_tokens)
 
     except Exception as e:
         # Логируем ошибки
         logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
-        return "Произошла ошибка при обработке запроса.", None, (0,0)
+        return ModelAnswer("Произошла ошибка при обработке запроса.")
 
-async def get_simple_answer(messages, model_name):
+async def get_simple_answer(messages, model_name)->Response|ChatCompletion:
 
 
         # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
-    if model_name == OpenAI_Models.O1_MINI.value:
+    if model_name == OpenAI_Models.o4_MINI.value:
         filtered_messages = [message for message in messages if message["role"] != "system"]
         partial_param = partial(
                 openai_client.chat.completions.create,
@@ -551,7 +562,7 @@ async def get_simple_answer(messages, model_name):
                 functions=functions,
                 function_call="auto",  
                 max_tokens=16384,
-            )
+            ) # type: ignore
              
 
     loop = asyncio.get_event_loop()

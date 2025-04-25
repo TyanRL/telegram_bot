@@ -4,7 +4,12 @@ import requests
 from ymaps import Geocode, GeocodeAsync
 
 # Ваш API-ключ
-API_KEY = os.getenv('YMAPS_GEOCODER')
+key_candidate = os.getenv('YMAPS_GEOCODER')
+if key_candidate is None:
+    key_candidate = ""
+    raise ValueError("YMAPS_GEOCODER is not set")
+API_KEY = key_candidate
+
 
 
 async def get_address(latitude, longitude):

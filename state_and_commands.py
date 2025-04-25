@@ -18,19 +18,22 @@ from telegramify_markdown import telegramify
 import telegramify_markdown
 
 from common_types import SafeDict
-from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
+from utils.sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
 from telegram.helpers import escape_markdown
 @unique
 class OpenAI_Models(Enum):
     DEFAULT_MODEL="gpt-4.1"
-    O1_MINI ="o3-mini"
+    o4_MINI ="o4-mini"
     SEARCH_MODEL="gpt-4o-search-preview"
 
 
-parse_mode="MarkdownV2"
+PARSE_MODE="MarkdownV2"
 
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-
+tg_bot_candidate = os.getenv('TELEGRAM_BOT_TOKEN')
+if tg_bot_candidate is None:
+    tg_bot_candidate = ""
+    raise ValueError("TELEGRAM_BOT_TOKEN is not set")
+TELEGRAM_BOT_TOKEN=tg_bot_candidate
 user_histories = SafeDict()
 translate_mode=SafeDict()
 
@@ -49,22 +52,23 @@ def get_OpenAI_Models(model: str) -> OpenAI_Models:
     return OpenAI_Models.DEFAULT_MODEL
 
 # сохраняет название модели в строковом виде
-async def set_user_model(user_id, model:OpenAI_Models):
+async def set_user_model(user_id:int, model:OpenAI_Models)->None:
     await user_model.set(user_id, model.value)
 # получает название модели в строковом виде
-async def get_user_model(user_id):
+async def get_user_model(user_id:int)->str:
     model = await user_model.get(user_id, None)
     if model is None:
         return OpenAI_Models.DEFAULT_MODEL.value
     else:
         return model
 
-async def set_user_image(user_id, image:str):
+
+async def set_user_image(user_id:int, image:dict|None)->None:
     await user_image.set(user_id,image)
-async def get_user_image(user_id):
+async def get_user_image(user_id:int)->str:
     return await user_image.get(user_id, None)
 
-def get_history():
+def get_all_histories()->SafeDict:
     return user_histories
 
 async def set_session_info(user:User) -> None:
@@ -72,6 +76,7 @@ async def set_session_info(user:User) -> None:
     local_time = get_local_time()
     username= user.username
     if username is None or username == "":
+        username =""
         if user.first_name is not None and user.first_name!= "":
             username = user.first_name
         if user.last_name is not None and user.last_name!= "":
@@ -79,20 +84,17 @@ async def set_session_info(user:User) -> None:
   
     await save_last_session(user.id, username, local_time)
 
-def get_local_time():
+def get_local_time()->datetime.datetime:
     utc_time = datetime.datetime.now(ZoneInfo("UTC"))    
 
     # Преобразование времени из UTC в локальное время
     local_timezone = ZoneInfo('Europe/Moscow')  # замените на вашу временную зону
     local_time = utc_time.astimezone(local_timezone)
     return local_time
-    
-async def set_translate_mode(user) -> None:
-    translate_mode
 
 
 voice_recognition_model_name="whisper-1"
-def get_voice_recognition_model():
+def get_voice_recognition_model()->str:
     return voice_recognition_model_name
 
 version="Нет данных"
@@ -101,29 +103,31 @@ def set_bot_version(bot_version: str) -> None:
     global version
     version = bot_version
 
-async def reply_text(update: Update, message:str):
+async def reply_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message)
     results = await telegramify(message)
     for item in results:
         if isinstance(item,  telegramify_markdown.type.Text):
-           escaped_text=item.content
+           text_item:telegramify_markdown.type.Text= item
+           escaped_text=text_item.content
         elif isinstance(item, telegramify_markdown.type.File):
-            await update.message.reply_document(item.file_path)
-            logging.info(f"Выслан файл: {item.file_path}")
+           file_item:telegramify_markdown.type.File=item
+           await update.message.reply_document(file_item.file_name) # type: ignore
+           logging.info(f"Выслан файл: {file_item.file_name}")
         elif isinstance(item, telegramify_markdown.type.Photo):
-            await update.message.reply_document(item.file_path)
-            logging.info(f"Выслано фото: {item.url}")
+           await update.message.reply_document(item.file_path) # type: ignore
+           logging.info(f"Выслано фото: {item.url}") # type: ignore
 
 
-    await update.message.reply_text(escaped_text, parse_mode=parse_mode)
+    await update.message.reply_text(escaped_text, parse_mode=PARSE_MODE) # type: ignore
 
-async def reply_service_text(update: Update, message:str):
+async def reply_service_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(f"_{escaped_text}_", parse_mode=parse_mode)
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode=PARSE_MODE) # type: ignore
 
 async def send_service_text(user_id:int, message:str):
     escaped_text = escape_markdown(message, version=2)
-    await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=parse_mode)
+    await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=PARSE_MODE)
 
 
 
@@ -131,10 +135,10 @@ async def send_service_text(user_id:int, message:str):
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    await user_histories.set(user.id, [])
-    await user_model.set(user.id, None)
+    await user_histories.set(user.id, []) # type: ignore
+    await user_model.set(user.id, None) # type: ignore
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
-    logging.info(f"Context for user {user.id} is reset")
+    logging.info(f"Context for user {user.id} is reset") # type: ignore
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -153,13 +157,13 @@ async def add_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE
     reply_markup = ReplyKeyboardMarkup([[location_button]], resize_keyboard=True)
     message = "Пожалуйста, нажмите на кнопку ниже, чтобы отправить боту свою геолокацию."
     escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(f"_{escaped_text}_", parse_mode=parse_mode,reply_markup=reply_markup)
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode=PARSE_MODE,reply_markup=reply_markup) # type: ignore
     
 
 
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if in_admin_list(user):
+    if in_admin_list(user) and isinstance(context.args, list):
         if len(context.args) == 0:
             await reply_service_text(update,"Вы не указали идентификатор пользователя. Команда должна выглядеть так: /add <идентификатор пользователя>")
 
@@ -181,7 +185,7 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    if in_admin_list(user):
+    if in_admin_list(user) and isinstance(context.args, list):
         if len(context.args) == 0:
             await reply_service_text(update,"Вы не указали идентификатор пользователя. Команда должна выглядеть так: /remove <идентификатор пользователя>")
 
@@ -229,10 +233,10 @@ async def get_last_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
 
-async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE)-> None:
     user = update.effective_user
-    if await in_user_list(user):
-        model = await get_user_model(update.effective_user.id)
+    if await in_user_list(user) and user is not None:
+        model = await get_user_model(user.id)
         info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация картинок, распознавание голосовых сообщений,  распознавание картинок, поиск в интернете с помощью Google, умное сохранение и выдача произвольной текстовой информации в заметках - личный секретарь."
         await reply_service_text(update,info)
     else:
@@ -265,6 +269,8 @@ async def send_service_notification(update: Update, context: ContextTypes.DEFAUL
 
 async def send_service_notification_inner(update: Update, message:str, user_id_str=None) -> None:
     user = update.effective_user
+    if user is None:
+        return
     if in_admin_list(user):
        
         temp_user_ids = await get_all()
