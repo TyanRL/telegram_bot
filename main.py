@@ -24,7 +24,7 @@ from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
 
-version="16.0"
+version="17.0"
 
 
 # URL вебхука

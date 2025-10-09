@@ -528,49 +528,46 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         return ModelAnswer("Произошла ошибка при обработке запроса.")
 
 async def get_simple_answer(messages, model_name)->Response|ChatCompletion:
-
-
-        # так как модели o1 не поддерживают сиcтемные сообщения то удалим их
-    if model_name == OpenAI_Models.o4_MINI.value:
-        filtered_messages = [message for message in messages if message["role"] != "system"]
-        partial_param = partial(
-                openai_client.chat.completions.create,
-                model=model_name,
-                messages=filtered_messages,
-                max_completion_tokens=32768
-            )
-    elif model_name == OpenAI_Models.SEARCH_MODEL.value:
-        # Опциональные настройки инструмента веб-поиска:
-        web_search_options_params={}
-        web_search_options_params["search_context_size"] = "medium"  # глубина поиска: low, medium или high
-        web_search_options_params["user_location"] = {
-                        "type": "approximate",
-                        "approximate": {"country": "RU"}  # страна для локализации результатов
-                        }
-        partial_param = partial(
+        if model_name == "web_search":
+            partial_param = partial(
                 openai_client.responses.create,
-                model=OpenAI_Models.DEFAULT_MODEL.value,
+                model= OpenAI_Models.SEARCH_MODEL,
                 input=messages,
                 max_output_tokens=16384,
-                tools=[{"type": "web_search_preview"}],
-            )
-    else:
-        partial_param = partial(
-                openai_client.chat.completions.create,
+                tools=[
+                    {"type": "web_search_preview", "search_context_size": "high"},
+                ],
+            )  # type: ignore
+        else:
+            params = dict(
                 model=model_name,
                 messages=messages,
                 functions=functions,
-                function_call="auto",  
-                max_tokens=16384,
-            ) # type: ignore
-             
+                function_call="auto",
+                max_completion_tokens=16384,
+            )
 
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(
-            None,
-            partial_param
-        )
-    
-    return response
+            if model_name == OpenAI_Models.DEFAULT_MODEL:
+                params.update(
+                    {
+                        "verbosity": "low",
+                        "reasoning_effort": "high",
+                    }
+                )
+            elif model_name == OpenAI_Models.MINI:
+                params.update(
+                    {
+                        "verbosity": "low",
+                        "reasoning_effort": "high",
+                    }
+                )
+
+            partial_param = partial(openai_client.chat.completions.create, **params)  # type: ignore
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, partial_param)
+
+        return response
+
 
 
