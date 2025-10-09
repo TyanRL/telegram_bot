@@ -534,7 +534,7 @@ async def get_simple_answer(messages, model_name)->Response|ChatCompletion:
                 params.update(
                     {
                         "verbosity": "low",
-                        "reasoning_effort": "high",
+                        "reasoning_effort": "medium",
                     }
                 )
             elif model_name == OpenAI_Models.MINI:
