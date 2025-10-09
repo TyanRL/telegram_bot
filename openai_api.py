@@ -127,23 +127,6 @@ functions=[
         }
     },
     {
-        "name": "change_model",
-        "description": "Сменить модель генерации текста",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "model": {
-                    "type": "string",
-                    "enum": [f"{OpenAI_Models.DEFAULT_MODEL.value}", f"{OpenAI_Models.o4_MINI.value}"],
-                    "description": f"'{OpenAI_Models.DEFAULT_MODEL.value}' - основная используемая модель широкого назначения. '{OpenAI_Models.o4_MINI.value}' - модель с рассуждениями, подходящая для решения логических задач, написания кода и научных целей. Не имеет function calling, не может работать с изображениями. Если пользователя не устраивают текущие результаты, то можно сменить модель."
-                 },
-            },
-            "required": [
-                 "model",
-             ]
-        }
-    },
-    {
         "name": "add_note",
         "description": "Добавить заметку по запросу пользователя",
 
