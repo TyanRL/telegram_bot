@@ -24,7 +24,7 @@ from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
 
-version="17.0"
+version="17.1"
 
 
 # URL вебхука
@@ -346,9 +346,13 @@ async def main():
         await application.process_update(update)
         return web.Response(text="OK")
 
+    async def health_handler(request):
+        return web.Response(text=f"OK v{version} DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
+
     # Создание веб-приложения aiohttp
     app = web.Application()
     app.router.add_post('/telegram-webhook', telegram_webhook_handler)
+    app.router.add_get('/health', health_handler)
 
     # Запуск вебхука
     runner = web.AppRunner(app)
