@@ -47,97 +47,86 @@ class ModelAnswer():
 functions=[
     {
         "type": "function",
-        "function": {
-            "name": "request_geolocation",
-            "description": "Получить геолокацию пользователя",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
+        "name": "request_geolocation",
+        "description": "Получить геолокацию пользователя",
+        "parameters": {
+            "type": "object",
+            "properties": {}
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_weather_description",
-            "description": "Получить текущую погоду.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "latitude": {
-                        "type": "number",
-                        "description": "Широта."
-                    },
-                    "longitude": {
-                        "type": "number",
-                        "description": "Долгота."
-                    }
+        "name": "get_weather_description",
+        "description": "Получить текущую погоду.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "description": "Широта."
                 },
-                "required": ["latitude", "longitude"]
-            }
+                "longitude": {
+                    "type": "number",
+                    "description": "Долгота."
+                }
+            },
+            "required": ["latitude", "longitude"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_weekly_forecast",
-            "description": "Получить прогноз погоды на неделю вперед.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "latitude": {
-                        "type": "number",
-                        "description": "Широта."
-                    },
-                    "longitude": {
-                        "type": "number",
-                        "description": "Долгота."
-                    }
+        "name": "get_weekly_forecast",
+        "description": "Получить прогноз погоды на неделю вперед.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "description": "Широта."
                 },
-                "required": ["latitude", "longitude"]
-            }
+                "longitude": {
+                    "type": "number",
+                    "description": "Долгота."
+                }
+            },
+            "required": ["latitude", "longitude"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "get_location_by_address",
-            "description": "Получить широту и долготу по адресу или названию местности.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "address": {
-                        "type": "string",
-                        "description": "Адрес иил название местности по которому нужно получить геолокацию."
-                    }
-                },
-                "required": ["address"]
-            }
+        "name": "get_location_by_address",
+        "description": "Получить широту и долготу по адресу или названию местности.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "description": "Адрес или название местности по которому нужно получить геолокацию."
+                }
+            },
+            "required": ["address"]
         }
     },
     {
         "type": "function",
-        "function": {
-            "name": "generate_image",
-            "description": "Сгенерировать изображение по запросу пользователя.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Запрос пользователя, по которому сгенерируется картинка"
-                    },
-                    "style": {
-                        "type": "string",
-                        "enum": ["vivid", "natural"],
-                        "description": "Стиль изображения: 'vivid' или 'natural'"
-                    }
+        "name": "generate_image",
+        "description": "Сгенерировать изображение по запросу пользователя.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Запрос пользователя, по которому сгенерируется картинка"
                 },
-                "required": ["prompt", "style"]
-            }
+                "style": {
+                    "type": "string",
+                    "enum": ["vivid", "natural"],
+                    "description": "Стиль изображения: 'vivid' или 'natural'"
+                }
+            },
+            "required": ["prompt", "style"]
         }
-    },
-    {"type": "web_search_preview", "search_context_size": "high"},
+    }
 ]
 
 
