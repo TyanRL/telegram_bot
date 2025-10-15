@@ -237,26 +237,43 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer(None, [], context_tokens, completion_tokens)
 
                 if function_call_name in ("get_weather_description", "get_weekly_forecast"):
-                    latitude = function_args_dict["latitude"]
-                    longitude = function_args_dict["longitude"]
-                    # Если геолокация есть, то вызываем функцию получения погоды
-                    if function_call_name == "get_weather_description":
-                        result = get_weather_description2(latitude, longitude)
-                    else:
-                        result = get_weekly_forecast(latitude, longitude)
+                    try:
+                        latitude = function_args_dict["latitude"]
+                        longitude = function_args_dict["longitude"]
 
-                    new_system_message = {"role": "system", "content": result}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
-                    inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
-                    context_tokens += inner_answer.ctx_token
-                    completion_tokens += inner_answer.completion_token
-                    return ModelAnswer(
-                        inner_answer.bot_reply,
-                        additional_system_messages + inner_answer.additional_system_messages,
-                        context_tokens,
-                        completion_tokens
-                    )
+                        logging.info(f"Вызываем {function_call_name} для координат: {latitude}, {longitude}")
+
+                        # Если геолокация есть, то вызываем функцию получения погоды
+                        if function_call_name == "get_weather_description":
+                            result = get_weather_description2(latitude, longitude)
+                        else:
+                            result = get_weekly_forecast(latitude, longitude)
+
+                        if not result or result.startswith("Ошибка"):
+                            error_msg = f"Не удалось получить данные о погоде для координат {latitude}, {longitude}"
+                            logging.error(error_msg)
+                            await reply_service_text(update, error_msg)
+                            return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
+
+                        logging.info(f"Данные о погоде получены: {result[:100]}...")
+                        new_system_message = {"role": "system", "content": result}
+                        additional_system_messages.append(new_system_message)
+                        messages.append(new_system_message)
+
+                        inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
+                        context_tokens += inner_answer.ctx_token
+                        completion_tokens += inner_answer.completion_token
+                        return ModelAnswer(
+                            inner_answer.bot_reply,
+                            additional_system_messages + inner_answer.additional_system_messages,
+                            context_tokens,
+                            completion_tokens
+                        )
+                    except Exception as e:
+                        error_msg = f"Ошибка при получении данных о погоде: {e}"
+                        logging.error(error_msg, exc_info=True)
+                        await reply_service_text(update, "Произошла ошибка при получении данных о погоде. Попробуйте позже.")
+                        return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
                 if function_call_name == "generate_image":
                     image_url = generate_image(
@@ -282,25 +299,38 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
                 if function_call_name == "get_location_by_address":
                     address = function_args_dict["address"]
-                    geoloc = get_location_by_address(address)
-                    if geoloc is None:
-                        bot_reply = "Не удалось получить геолокацию."
-                        return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
-                    (latitude, longitude) = geoloc
-                    result = f"Геолокация {address} установлена. Широта: {latitude}, Долгота: {longitude}"
-                    logging.info(result)
-                    new_system_message = {"role": "system", "content": result}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
-                    inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
-                    context_tokens += inner_answer.ctx_token
-                    completion_tokens += inner_answer.completion_token
-                    return ModelAnswer(
-                        inner_answer.bot_reply,
-                        additional_system_messages + inner_answer.additional_system_messages,
-                        context_tokens,
-                        completion_tokens
-                    )
+                    logging.info(f"Вызываем get_location_by_address для адреса: {address}")
+
+                    try:
+                        geoloc = get_location_by_address(address)
+                        if geoloc is None:
+                            error_msg = f"Не удалось получить геолокацию для адреса '{address}'. Проверьте правильность написания адреса и доступность сервиса геокодирования."
+                            logging.error(error_msg)
+                            await reply_service_text(update, error_msg)
+                            return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
+
+                        (latitude, longitude) = geoloc
+                        result = f"Геолокация для '{address}' установлена. Широта: {latitude}, Долгота: {longitude}"
+                        logging.info(result)
+
+                        new_system_message = {"role": "system", "content": result}
+                        additional_system_messages.append(new_system_message)
+                        messages.append(new_system_message)
+
+                        inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
+                        context_tokens += inner_answer.ctx_token
+                        completion_tokens += inner_answer.completion_token
+                        return ModelAnswer(
+                            inner_answer.bot_reply,
+                            additional_system_messages + inner_answer.additional_system_messages,
+                            context_tokens,
+                            completion_tokens
+                        )
+                    except Exception as e:
+                        error_msg = f"Ошибка при получении геолокации для адреса '{address}': {e}"
+                        logging.error(error_msg, exc_info=True)
+                        await reply_service_text(update, f"Произошла ошибка при получении геолокации. Попробуйте позже.")
+                        return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
                 if function_call_name == "add_note":
                     title = function_args_dict["title"]

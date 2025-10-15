@@ -34,26 +34,64 @@ async def get_address(latitude, longitude):
     
 def get_location_by_address(address):
     try:
+        # Проверка API ключа
+        if not API_KEY or API_KEY == "":
+            logging.error("API ключ Yandex Maps не установлен или пустой")
+            return None
+
+        logging.info(f"Запрос геолокации для адреса: {address}")
+
         # Запрос
-        url = f"https://geocode-maps.yandex.ru/1.x/"
+        url = "https://geocode-maps.yandex.ru/1.x/"
         params = {
             "apikey": API_KEY,
             "geocode": address,
             "format": "json"
         }
-        response = requests.get(url, params=params)
+
+        response = requests.get(url, params=params, timeout=10)
 
         # Обработка ответа
         if response.status_code == 200:
-            data = response.json()
             try:
-                pos = data["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]["Point"]["pos"]
+                data = response.json()
+                logging.info(f"Ответ от Yandex API: {data}")
+
+                # Проверяем структуру ответа
+                response_data = data.get("response", {})
+                geo_collection = response_data.get("GeoObjectCollection", {})
+                feature_member = geo_collection.get("featureMember", [])
+
+                if not feature_member:
+                    logging.error(f"Не найдено результатов геокодирования для адреса: {address}")
+                    return None
+
+                geo_object = feature_member[0].get("GeoObject", {})
+                point = geo_object.get("Point", {})
+                pos = point.get("pos")
+
+                if not pos:
+                    logging.error(f"Не найдены координаты для адреса: {address}")
+                    return None
+
                 longitude, latitude = map(float, pos.split())
+                logging.info(f"Получены координаты для '{address}': {latitude}, {longitude}")
                 return (latitude, longitude)
-            except (IndexError, KeyError):
+
+            except (KeyError, IndexError, ValueError, TypeError) as e:
+                logging.error(f"Ошибка при парсинге ответа API для адреса '{address}': {e}")
+                logging.error(f"Структура ответа: {data}")
                 return None
         else:
-            logging.exception(f"Ошибка: {response.status_code}")
+            logging.error(f"Ошибка HTTP {response.status_code} при запросе геолокации для '{address}': {response.text}")
+            return None
+
+    except requests.exceptions.Timeout:
+        logging.error(f"Таймаут запроса геолокации для адреса: {address}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Ошибка сети при запросе геолокации для адреса '{address}': {e}")
+        return None
     except Exception as e:
-        logging.exception(f"Ошибка при получениии геолокации по адресу: {e}")
-    return None
+        logging.error(f"Неожиданная ошибка при получении геолокации по адресу '{address}': {e}", exc_info=True)
+        return None
