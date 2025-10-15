@@ -47,68 +47,6 @@ class ModelAnswer():
 functions=[
     {
         "type": "function",
-        "name": "request_geolocation",
-        "description": "Получить геолокацию пользователя",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
-    },
-    {
-        "type": "function",
-        "name": "get_weather_description",
-        "description": "Получить текущую погоду.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "latitude": {
-                    "type": "number",
-                    "description": "Широта."
-                },
-                "longitude": {
-                    "type": "number",
-                    "description": "Долгота."
-                }
-            },
-            "required": ["latitude", "longitude"]
-        }
-    },
-    {
-        "type": "function",
-        "name": "get_weekly_forecast",
-        "description": "Получить прогноз погоды на неделю вперед.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "latitude": {
-                    "type": "number",
-                    "description": "Широта."
-                },
-                "longitude": {
-                    "type": "number",
-                    "description": "Долгота."
-                }
-            },
-            "required": ["latitude", "longitude"]
-        }
-    },
-    {
-        "type": "function",
-        "name": "get_location_by_address",
-        "description": "Получить широту и долготу по адресу или названию местности.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string",
-                    "description": "Адрес или название местности по которому нужно получить геолокацию."
-                }
-            },
-            "required": ["address"]
-        }
-    },
-    {
-        "type": "function",
         "name": "generate_image",
         "description": "Сгенерировать изображение по запросу пользователя.",
         "parameters": {
@@ -126,7 +64,8 @@ functions=[
             },
             "required": ["prompt", "style"]
         }
-    }
+    },
+    { "type": "web_search" },
 ]
 
 
