@@ -76,34 +76,28 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
     await add_location_button(update, context)
 
 # 
-def generate_image(openai_client, prompt:str, style:str):
+def generate_image(openai_client, prompt: str, style: str):
     response = None
     try:
         if prompt is None or prompt == "":
             logging.info("Пустой запрос на генерацию изображения")
             return
-    
-        if style not in ('vivid', 'natural'):
+        # Если стиль не задан или не допустим, устанавливаем стиль по умолчанию
+        if not style or style not in ['vivid', 'natural']:
             style = 'vivid'
-
         response = openai_client.images.generate(
             model='dall-e-3',
             prompt=prompt,
             n=1,
             size='1024x1024',
-            #quality='hd',  # Опционально: 'standard' или 'hd'
-            style=style  # Опционально: 'vivid' или 'natural'
-            )
-        # Получаем первый объект изображения из списка data
+            #quality='hd',
+            style=style
+        )
         image = response.data[0]
-
-        # Извлекаем URL изображения
         image_url = image.url
     except Exception as e:
-        logging.info(f"Response: {str(response)}")
         logging.error("Ошибка при генерации изображения: " + str(e))
         return
-    # Отправка изображения пользователю
     return image_url
 
 def transcribe_audio(audio_filename):
