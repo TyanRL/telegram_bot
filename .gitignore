@@ -1,3 +1,4 @@
 # app configs
 .env
 /__pycache__
+/.pixi
