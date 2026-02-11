@@ -1,8 +1,8 @@
 import asyncio
 import base64
+import logging
 import mimetypes
 import os
-import logging
 import tempfile
 
 from functools import partial
@@ -24,7 +24,7 @@ from sql import get_admins, in_user_list
 from yandex_maps import get_address
 
 
-version="11.00"
+version="12.00"
 
 # Инициализация OpenAI и Telegram API
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -32,7 +32,7 @@ openai_client = OpenAI(api_key=opena_ai_api_key)
 
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
 
-
+logger=logging.getLogger(__name__)
 
 # URL вебхука
 WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com/telegram-webhook"
@@ -89,7 +89,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                     ],
                 })
             except Exception as e:
-                logging.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
+                logger.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
                 return "Извините, произошла ошибка при обработке вашего запроса c изображением."
             finally:
                 await set_user_image(update.effective_user.id, None)
@@ -99,7 +99,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
     
    
         system_message= get_system_message()
-        logging.info([system_message] + history)
+        logger.info([system_message] + history)
         
         
         bot_reply, additional_system_messages, service_after_message = await get_model_answer(openai_client, update, context, [system_message] + history)
@@ -108,18 +108,18 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         if additional_system_messages is not None:
             for message in additional_system_messages:
                 history.append(message)
-                logging.info(f"В историю добавлена новая системная информация: {message}")
+                logger.info(f"В историю добавлена новая системная информация: {message}")
         # Добавляем ответ бота в историю
         if bot_reply is not None:
             history.append({"role": "assistant", "content": bot_reply})
         
         # Обновляем историю пользователя
         await user_histories.set(update.effective_user.id, history)
-        logging.info(f"История пользователя обновлена: {history}")
+        logger.info(f"История пользователя обновлена: {history}")
         
         return bot_reply
     except Exception as e:
-        logging.error(f"Ошибка при обращении к OpenAI API: {e}")
+        logger.error(f"Ошибка при обращении к OpenAI API: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
 async def get_history(user_id, user_message):
@@ -198,7 +198,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     # Использование временного файла для хранения голосового сообщения
     with tempfile.NamedTemporaryFile(delete=True, suffix=".ogg") as temp_file:
         await file.download_to_drive(temp_file.name)  # Загрузка файла
-        logging.info(f"Временный файл загружен: {temp_file.name}")
+        logger.info(f"Временный файл загружен: {temp_file.name}")
 
         try:
             # Распознавание речи с использованием OpenAI
@@ -209,14 +209,14 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                  return
             await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
             await handle_message_inner(update, context, recognized_text) 
-            logging.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
+            logger.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
         except Exception as e:
-            logging.error(f"Ошибка при распознавании текста через OpenAI: {e}")
+            logger.error(f"Ошибка при распознавании текста через OpenAI: {e}")
             await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
 
 async def not_authorized_message(update, user):
     await reply_service_text(update,f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-    logging.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
+    logger.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
 async def set_telegram_webhook(application):
     await application.bot.set_webhook(WEBHOOK_URL)
@@ -235,7 +235,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await reply_service_text(update,location_message)
             await handle_message_inner(update, context, "Геолокация отправлена. Внимательно проанализируйте историю и постарайтесь ответить на ранее заданный вопрос или вызовите следующую функцию, необходимую для ответа.")
     except Exception as e:
-        logging.error(f"Ошибка в обработчике геолокации: {e}")
+        logger.error(f"Ошибка в обработчике геолокации: {e}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
@@ -261,7 +261,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_service_text(update,"Изображение загружено, задайте вопрос по нему")
     except Exception as e:
         await reply_service_text(update,"Ошибка при загрузке изображения")
-        logging.error(f"Ошибка в обработчике изображений: {e}")
+        logger.error(f"Ошибка в обработчике изображений: {e}")
 
 async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -312,7 +312,7 @@ async def main():
     async def telegram_webhook_handler(request):
         update = await request.json()
         update = Update.de_json(update, application.bot)
-        await application.process_update(update)
+        asyncio.create_task(application.process_update(update))
         return web.Response(text="OK")
 
     # Создание веб-приложения aiohttp
@@ -329,14 +329,14 @@ async def main():
     await set_telegram_webhook(application)
 
     # Запуск бота
-    logging.info(f"Bot v{version} is running. DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
+    logger.info(f"Bot v{version} is running. DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
     try:
         await asyncio.Event().wait()
     finally:
         # Корректная остановка приложения
         await application.stop()
         await application.shutdown()
-        logging.info("Bot has stopped.")
+        logger.info("Bot has stopped.")
 
 if __name__ == '__main__':
     asyncio.run(main())

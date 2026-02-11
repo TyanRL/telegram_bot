@@ -18,8 +18,8 @@ from sql import get_admins, get_all, get_all_session, in_admin_list, in_user_lis
 from telegram.helpers import escape_markdown
 @unique
 class OpenAI_Models(Enum):
-    DEFAULT_MODEL="gpt-5"
-    O1_MINI ="gpt-5-mini"
+    DEFAULT_MODEL="gpt-5.1"
+    O1_MINI ="gpt-5.1-mini"
 
 parse_mode="MarkdownV2"
 
