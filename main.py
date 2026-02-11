@@ -24,7 +24,7 @@ from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
 
-version="19.1"
+version="19.2"
 
 
 # URL вебхука
@@ -52,6 +52,8 @@ max_history_length = 15  # Максимальное количество соо�
 user_histories=get_all_histories()
 
 administrators_ids = get_admins()
+
+semaphore = asyncio.Semaphore(10)
 
 async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message)->tuple[str|None, str|None]:
     try:
@@ -226,7 +228,7 @@ async def not_authorized_message(update, user):
     logger.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
 async def set_telegram_webhook(application):
-    await application.bot.set_webhook(WEBHOOK_URL)
+    await application.bot.set_webhook(WEBHOOK_URL, timeout=30)
 
 # Обработка геолокации
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -333,9 +335,11 @@ async def main():
     async def telegram_webhook_handler(request):
         update = await request.json()
         update = Update.de_json(update, application.bot)
-        task = asyncio.create_task(application.process_update(update))
-        task.add_done_callback(lambda t: t.exception() and logger.error("Error in update processing", exc_info=t.exception()))
-        
+        async with semaphore:
+            task = asyncio.create_task(application.process_update(update))
+            task.add_done_callback(
+                lambda t: t.exception() and logger.error("Error in update processing", exc_info=t.exception())
+                )        
         return web.Response(text="OK")
 
     async def health_handler(request):
