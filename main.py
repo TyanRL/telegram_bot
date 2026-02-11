@@ -24,7 +24,7 @@ from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
 
-version="18.2"
+version="19.0"
 
 
 # URL вебхука
@@ -331,7 +331,7 @@ async def main():
     async def telegram_webhook_handler(request):
         update = await request.json()
         update = Update.de_json(update, application.bot)
-        await application.process_update(update)
+        asyncio.create_task(application.process_update(update))
         return web.Response(text="OK")
 
     async def health_handler(request):
