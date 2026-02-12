@@ -5,7 +5,6 @@ import os
 import logging
 import tempfile
 
-from functools import partial
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,12 +12,13 @@ from telegram.ext import (
     MessageHandler,
     ContextTypes,
     filters,
+    Application
 )
 from aiohttp import web
-from openai import OpenAI
+
 
 from utils.elastic import get_all_user_notes
-from openai_api import get_model_answer, transcribe_audio, ModelAnswer
+from openai_api import get_model_answer, transcribe_audio
 from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
@@ -227,8 +227,8 @@ async def not_authorized_message(update, user):
     await reply_service_text(update,f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
     logger.error(f"Нет доступа: {user}. Допустимые пользователи: {administrators_ids}")
 
-async def set_telegram_webhook(application):
-    await application.bot.set_webhook(WEBHOOK_URL, timeout=30)
+async def set_telegram_webhook(application:Application):
+    await application.bot.set_webhook(WEBHOOK_URL)
 
 # Обработка геолокации
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
