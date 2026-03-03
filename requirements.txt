@@ -8,6 +8,6 @@ openai>=2.20.0,<3
 python-telegram-bot>=22.6,<23
 mysql-connector-python>=9.6.0,<10
 google-api-python-client>=2.156.0
-telegramify-markdown>=0.5.4,<0.6
+telegramify-markdown[mermaid]>=0.5.4,<0.6
 ymaps>=1.3,<2
 nest-asyncio>=1.6.0,<2
