@@ -25,6 +25,7 @@ from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 
 
+logger = logging.getLogger(__name__)
 
 # Инициализация OpenAI
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
@@ -80,15 +81,15 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
 def generate_image(prompt: str | None, style: str | None):
     try:
         if prompt is None or prompt == "":
-            logging.info("Пустой запрос на генерацию изображения")
+            logger.info("Пустой запрос на генерацию изображения")
             return None
         image_urls = generate_image_openrouter(prompt=prompt)
         if not image_urls:
-            logging.error("OpenRouter не вернул изображений")
+            logger.error("OpenRouter не вернул изображений")
             return None
         return image_urls[0]
     except Exception as e:
-        logging.error("Ошибка при генерации изображения через OpenRouter: " + str(e), exc_info=True)
+        logger.error("Ошибка при генерации изображения через OpenRouter: " + str(e), exc_info=True)
         return None
 
 def transcribe_audio(audio_filename):
@@ -100,7 +101,7 @@ def transcribe_audio(audio_filename):
                             )
         recognized_text=transcription.text
     except Exception as e:
-        logging.error("Ошибка при распознавании речи: " + str(e))
+        logger.error("Ошибка при распознавании речи: " + str(e))
         return
     # Отправка текста пользователю
     return recognized_text
@@ -111,14 +112,14 @@ def transcribe_audio(audio_filename):
 
 async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, messages: list[dict], recursion_depth=0)->ModelAnswer:
     try:
-        logging.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
+        logger.info(f"Запрос к модели: {str(messages[-1])}, глубина рекурсии {recursion_depth}")   
 
         if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
-            logging.error("Recursion depth exceeded")
+            logger.error("Recursion depth exceeded")
             return ModelAnswer(None)
 
         if update.effective_user is None:
-            logging.error("User is None")
+            logger.error("User is None")
             return ModelAnswer(None)
 
         context_tokens=0
@@ -142,7 +143,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 tool = getattr(tool_item, "tool", None)
                 function_call_name = getattr(tool, "name", None) if tool else None
                 function_args = getattr(tool, "arguments", {}) if tool else {}
-                logging.info(f"Tool call: {function_call_name}, args: {function_args}, Тип: {type(function_args)}")
+                logger.info(f"Tool call: {function_call_name}, args: {function_args}, Тип: {type(function_args)}")
 
                 # Нормализуем аргументы в dict
                 if isinstance(function_args, str):
@@ -156,7 +157,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     function_args_dict = {}
 
                 if function_call_name == "request_geolocation":
-                    logging.info("Вызываем функцию запроса геолокации")
+                    logger.info("Вызываем функцию запроса геолокации")
                     await request_geolocation(update, context)
                     return ModelAnswer(None, [], context_tokens, completion_tokens)
 
@@ -165,7 +166,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         latitude = function_args_dict["latitude"]
                         longitude = function_args_dict["longitude"]
 
-                        logging.info(f"Вызываем {function_call_name} для координат: {latitude}, {longitude}")
+                        logger.info(f"Вызываем {function_call_name} для координат: {latitude}, {longitude}")
 
                         # Если геолокация есть, то вызываем функцию получения погоды
                         if function_call_name == "get_weather_description":
@@ -175,11 +176,11 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
                         if not result or result.startswith("Ошибка"):
                             error_msg = f"Не удалось получить данные о погоде для координат {latitude}, {longitude}"
-                            logging.error(error_msg)
+                            logger.error(error_msg)
                             await reply_service_text(update, error_msg)
                             return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
 
-                        logging.info(f"Данные о погоде получены: {result[:100]}...")
+                        logger.info(f"Данные о погоде получены: {result[:100]}...")
                         new_system_message = {"role": "system", "content": result}
                         additional_system_messages.append(new_system_message)
                         messages.append(new_system_message)
@@ -195,7 +196,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         )
                     except Exception as e:
                         error_msg = f"Ошибка при получении данных о погоде: {e}"
-                        logging.error(error_msg, exc_info=True)
+                        logger.error(error_msg, exc_info=True)
                         await reply_service_text(update, "Произошла ошибка при получении данных о погоде. Попробуйте позже.")
                         return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
@@ -222,19 +223,19 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
                 if function_call_name == "get_location_by_address":
                     address = function_args_dict["address"]
-                    logging.info(f"Вызываем get_location_by_address для адреса: {address}")
+                    logger.info(f"Вызываем get_location_by_address для адреса: {address}")
 
                     try:
                         geoloc = get_location_by_address(address)
                         if geoloc is None:
                             error_msg = f"Не удалось получить геолокацию для адреса '{address}'. Проверьте правильность написания адреса и доступность сервиса геокодирования."
-                            logging.error(error_msg)
+                            logger.error(error_msg)
                             await reply_service_text(update, error_msg)
                             return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
 
                         (latitude, longitude) = geoloc
                         result = f"Геолокация для '{address}' установлена. Широта: {latitude}, Долгота: {longitude}"
-                        logging.info(result)
+                        logger.info(result)
 
                         new_system_message = {"role": "system", "content": result}
                         additional_system_messages.append(new_system_message)
@@ -251,7 +252,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         )
                     except Exception as e:
                         error_msg = f"Ошибка при получении геолокации для адреса '{address}': {e}"
-                        logging.error(error_msg, exc_info=True)
+                        logger.error(error_msg, exc_info=True)
                         await reply_service_text(update, f"Произошла ошибка при получении геолокации. Попробуйте позже.")
                         return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
@@ -265,7 +266,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
                 if function_call_name == "get_all_user_notes":
-                    logging.info("Вызываем функцию получения всех заметок.")
+                    logger.info("Вызываем функцию получения всех заметок.")
                     documents = get_all_user_notes(update.effective_user.id)
                     if len(documents) == 0:
                         await reply_service_text(update, "Заметки не найдены.")
@@ -324,7 +325,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
     except Exception as e:
         # Логируем ошибки
-        logging.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
+        logger.error(f"Ошибка при обращении к OpenAI API: {e}", exc_info=True)
         return ModelAnswer("Произошла ошибка при обработке запроса.")
 
 async def get_simple_answer(messages, model_name) -> Response:
