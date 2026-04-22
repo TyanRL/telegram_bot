@@ -123,13 +123,8 @@ functions=[
                     "type": "string",
                     "description": "Запрос пользователя, по которому сгенерируется картинка"
                 },
-                "style": {
-                    "type": "string",
-                    "enum": ["vivid", "natural"],
-                    "description": "Стиль изображения: 'vivid' или 'natural'"
-                }
             },
-            "required": ["prompt", "style"]
+            "required": ["prompt"]
         }
     },
     { "type": "web_search" },
@@ -143,7 +138,7 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
     await add_location_button(update, context)
 
 # 
-def generate_image(prompt: str | None, style: str | None):
+def generate_image(prompt: str | None):
     try:
         if prompt is None or prompt == "":
             logger.info("Пустой запрос на генерацию изображения")
@@ -255,15 +250,14 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             if function_call_name == "generate_image":
                 image_url = generate_image(
                     function_args_dict.get("prompt"),
-                    function_args_dict.get("style")
                 )
                 if image_url is None:
                     logger.warning(
-                        "Генерация изображения не удалась. prompt=%r, style=%r",
+                        "Генерация изображения не удалась. prompt=%r",
                         function_args_dict.get("prompt"),
-                        function_args_dict.get("style"),
+                        
                     )
-                    bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
+                    bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
                 await update.message.reply_photo(photo=image_url)  # type: ignore
                 bot_reply = "Я сделал :)"

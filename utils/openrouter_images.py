@@ -108,19 +108,31 @@ def generate_image_openrouter(
         logger.error("Ошибка HTTP при обращении к OpenRouter: %s", e, exc_info=True)
         raise OpenRouterImageError("Ошибка HTTP при обращении к OpenRouter") from e
 
+    content_type = response.headers.get("Content-Type", "")
+    response_preview = response.text[:500]
+
     if response.status_code < 200 or response.status_code >= 300:
         logger.error(
-            "Неверный HTTP-статус от OpenRouter: %s - %s",
+            "Неверный HTTP-статус от OpenRouter: %s, Content-Type: %s, body preview: %r",
             response.status_code,
-            response.text,
+            content_type,
+            response_preview,
         )
         raise OpenRouterImageError(f"Неверный HTTP-статус от OpenRouter: {response.status_code}")
 
     try:
         data = response.json()
     except ValueError as e:
-        logger.error("Не удалось распарсить JSON-ответ OpenRouter: %s", e, exc_info=True)
-        raise OpenRouterImageError("Некорректный JSON-ответ от OpenRouter") from e
+        logger.error(
+            "Не удалось распарсить JSON-ответ OpenRouter. status=%s, content_type=%s, body preview=%r",
+            response.status_code,
+            content_type,
+            response_preview,
+            exc_info=True,
+        )
+        raise OpenRouterImageError(
+            f"Некорректный JSON-ответ от OpenRouter (status={response.status_code}, content_type={content_type or 'unknown'})"
+        ) from e
 
     try:
         choices = data["choices"]
