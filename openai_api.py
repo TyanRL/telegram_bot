@@ -23,6 +23,9 @@ from utils.google_search import get_search_results
 from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
+import base64
+from io import BytesIO
+from telegram import InputFile
 
 
 logger = logging.getLogger(__name__)
@@ -248,18 +251,30 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_image":
-                image_url = generate_image(
-                    function_args_dict.get("prompt"),
+                image_data_url = generate_image(
+                function_args_dict.get("prompt"),
                 )
-                if image_url is None:
+                if image_data_url is None:
                     logger.warning(
-                        "Генерация изображения не удалась. prompt=%r",
-                        function_args_dict.get("prompt"),
-                        
+                    "Генерация изображения не удалась. prompt=%r",
+                    function_args_dict.get("prompt"),
                     )
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
-                await update.message.reply_photo(photo=image_url)  # type: ignore
+
+                try:
+                    if image_data_url.startswith("data:"):
+                        header, b64_data = image_data_url.split(",", 1)
+                        image_bytes = base64.b64decode(b64_data)
+                        bio = BytesIO(image_bytes)
+                        bio.name = "generated.png"
+                        await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
+                    else:
+                        await update.message.reply_photo(photo=image_data_url)  # type: ignore
+                except Exception as e:
+                    logger.error("Ошибка при отправке картинки в Telegram: %s", e, exc_info=True)
+                    return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
+
                 bot_reply = "Я сделал :)"
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
