@@ -27,6 +27,71 @@ from utils.yandex_maps import get_location_by_address
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_function_args(function_args):
+    if isinstance(function_args, str):
+        try:
+            return json.loads(function_args)
+        except Exception as e:
+            logger.warning(
+                "Не удалось распарсить аргументы tool call как JSON: %s. Значение: %r",
+                e,
+                function_args,
+                exc_info=True,
+            )
+            return {}
+    if isinstance(function_args, dict):
+        return function_args
+    if function_args is None:
+        return {}
+
+    logger.warning(
+        "Неожиданный тип аргументов tool call: %s. Значение: %r",
+        type(function_args),
+        function_args,
+    )
+    return {}
+
+
+def _extract_function_call(response: Response):
+    output_items = list(response.output or [])
+    logger.info(
+        "Responses API output: output_text=%r, items=%s",
+        getattr(response, "output_text", None),
+        [getattr(item, "type", type(item).__name__) for item in output_items],
+    )
+
+    for item in output_items:
+        item_type = getattr(item, "type", None)
+
+        if item_type in ("function_call", "custom_tool_call"):
+            function_call_name = getattr(item, "name", None)
+            function_args = getattr(item, "arguments", None)
+            logger.info(
+                "Найден function tool call: name=%s, args_type=%s",
+                function_call_name,
+                type(function_args),
+            )
+            return function_call_name, _normalize_function_args(function_args)
+
+        if item_type == "tool":
+            tool = getattr(item, "tool", None)
+            function_call_name = getattr(tool, "name", None) if tool else None
+            function_args = getattr(tool, "arguments", None) if tool else None
+            logger.info(
+                "Найден legacy tool call: name=%s, args_type=%s",
+                function_call_name,
+                type(function_args),
+            )
+            return function_call_name, _normalize_function_args(function_args)
+
+    logger.warning(
+        "В ответе Responses API не найден tool call. output_text=%r, raw_output=%r",
+        getattr(response, "output_text", None),
+        output_items,
+    )
+    return None, {}
+
 # Инициализация OpenAI
 opena_ai_api_key=os.getenv('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=opena_ai_api_key)
@@ -135,165 +200,43 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 completion_tokens += response.usage.output_tokens  # type: ignore
 
 
-        # Обработка tool-calls нового Responses API
+        # Обработка tool-calls Responses API
         if isinstance(response, Response):
-            tool_items = [item for item in (response.output or []) if getattr(item, "type", None) == "tool"]
-            if tool_items:
-                tool_item = tool_items[0]
-                tool = getattr(tool_item, "tool", None)
-                function_call_name = getattr(tool, "name", None) if tool else None
-                function_args = getattr(tool, "arguments", {}) if tool else {}
-                logger.info(f"Tool call: {function_call_name}, args: {function_args}, Тип: {type(function_args)}")
+            function_call_name, function_args_dict = _extract_function_call(response)
+            logger.info(
+                "Результат разбора tool call: name=%s, args=%r",
+                function_call_name,
+                function_args_dict,
+            )
 
-                # Нормализуем аргументы в dict
-                if isinstance(function_args, str):
-                    try:
-                        function_args_dict = json.loads(function_args)
-                    except Exception:
-                        function_args_dict = {}
-                elif isinstance(function_args, dict):
-                    function_args_dict = function_args
-                else:
-                    function_args_dict = {}
+            if function_call_name == "request_geolocation":
+                logger.info("Вызываем функцию запроса геолокации")
+                await request_geolocation(update, context)
+                return ModelAnswer(None, [], context_tokens, completion_tokens)
 
-                if function_call_name == "request_geolocation":
-                    logger.info("Вызываем функцию запроса геолокации")
-                    await request_geolocation(update, context)
-                    return ModelAnswer(None, [], context_tokens, completion_tokens)
+            if function_call_name in ("get_weather_description", "get_weekly_forecast"):
+                try:
+                    latitude = function_args_dict["latitude"]
+                    longitude = function_args_dict["longitude"]
 
-                if function_call_name in ("get_weather_description", "get_weekly_forecast"):
-                    try:
-                        latitude = function_args_dict["latitude"]
-                        longitude = function_args_dict["longitude"]
+                    logger.info(f"Вызываем {function_call_name} для координат: {latitude}, {longitude}")
 
-                        logger.info(f"Вызываем {function_call_name} для координат: {latitude}, {longitude}")
+                    if function_call_name == "get_weather_description":
+                        result = get_weather_description2(latitude, longitude)
+                    else:
+                        result = get_weekly_forecast(latitude, longitude)
 
-                        # Если геолокация есть, то вызываем функцию получения погоды
-                        if function_call_name == "get_weather_description":
-                            result = get_weather_description2(latitude, longitude)
-                        else:
-                            result = get_weekly_forecast(latitude, longitude)
+                    if not result or result.startswith("Ошибка"):
+                        error_msg = f"Не удалось получить данные о погоде для координат {latitude}, {longitude}"
+                        logger.error(error_msg)
+                        await reply_service_text(update, error_msg)
+                        return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
 
-                        if not result or result.startswith("Ошибка"):
-                            error_msg = f"Не удалось получить данные о погоде для координат {latitude}, {longitude}"
-                            logger.error(error_msg)
-                            await reply_service_text(update, error_msg)
-                            return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
-
-                        logger.info(f"Данные о погоде получены: {result[:100]}...")
-                        new_system_message = {"role": "system", "content": result}
-                        additional_system_messages.append(new_system_message)
-                        messages.append(new_system_message)
-
-                        inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
-                        context_tokens += inner_answer.ctx_token
-                        completion_tokens += inner_answer.completion_token
-                        return ModelAnswer(
-                            inner_answer.bot_reply,
-                            additional_system_messages + inner_answer.additional_system_messages,
-                            context_tokens,
-                            completion_tokens
-                        )
-                    except Exception as e:
-                        error_msg = f"Ошибка при получении данных о погоде: {e}"
-                        logger.error(error_msg, exc_info=True)
-                        await reply_service_text(update, "Произошла ошибка при получении данных о погоде. Попробуйте позже.")
-                        return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
-
-                if function_call_name == "generate_image":
-                    image_url = generate_image(
-                        function_args_dict.get("prompt"),
-                        function_args_dict.get("style")
-                    )
-                    if image_url is None:
-                        bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
-                        return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
-                    # Если генерация прошла успешно, то отправляем пользователю картинку
-                    await update.message.reply_photo(photo=image_url)  # type: ignore
-                    bot_reply = "Я сделал :)"
-                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
-
-                if function_call_name == "change_model":
-                    new_model_name_str = function_args_dict["model"]
-                    new_model_name = get_OpenAI_Models(new_model_name_str)
-                    if new_model_name_str != model_name:
-                        await set_user_model(update.effective_user.id, new_model_name)
-                        await reply_service_text(update, f"Модель успешно изменена на {new_model_name_str}. Для возврата на стандартную модель сбросьте контекст (/reset)")
-                        return ModelAnswer(None, [], context_tokens, completion_tokens)
-
-                if function_call_name == "get_location_by_address":
-                    address = function_args_dict["address"]
-                    logger.info(f"Вызываем get_location_by_address для адреса: {address}")
-
-                    try:
-                        geoloc = get_location_by_address(address)
-                        if geoloc is None:
-                            error_msg = f"Не удалось получить геолокацию для адреса '{address}'. Проверьте правильность написания адреса и доступность сервиса геокодирования."
-                            logger.error(error_msg)
-                            await reply_service_text(update, error_msg)
-                            return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
-
-                        (latitude, longitude) = geoloc
-                        result = f"Геолокация для '{address}' установлена. Широта: {latitude}, Долгота: {longitude}"
-                        logger.info(result)
-
-                        new_system_message = {"role": "system", "content": result}
-                        additional_system_messages.append(new_system_message)
-                        messages.append(new_system_message)
-
-                        inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
-                        context_tokens += inner_answer.ctx_token
-                        completion_tokens += inner_answer.completion_token
-                        return ModelAnswer(
-                            inner_answer.bot_reply,
-                            additional_system_messages + inner_answer.additional_system_messages,
-                            context_tokens,
-                            completion_tokens
-                        )
-                    except Exception as e:
-                        error_msg = f"Ошибка при получении геолокации для адреса '{address}': {e}"
-                        logger.error(error_msg, exc_info=True)
-                        await reply_service_text(update, f"Произошла ошибка при получении геолокации. Попробуйте позже.")
-                        return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
-
-                if function_call_name == "add_note":
-                    title = function_args_dict["title"]
-                    body = function_args_dict["body"]
-                    tags = function_args_dict["tags"]
-                    add_note(update.effective_user.id, title, body, tags)
-                    await reply_service_text(update, f"Заметка '{title}' добавлена.")
-                    bot_reply = "Я сделал :)"
-                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
-
-                if function_call_name == "get_all_user_notes":
-                    logger.info("Вызываем функцию получения всех заметок.")
-                    documents = get_all_user_notes(update.effective_user.id)
-                    if len(documents) == 0:
-                        await reply_service_text(update, "Заметки не найдены.")
-                        return ModelAnswer(None, [], context_tokens, completion_tokens)
-
-                    answer, system_message_body = get_notes_text(documents)
-                    new_system_message = {"role": "system", "content": system_message_body}
+                    logger.info(f"Данные о погоде получены: {result[:100]}...")
+                    new_system_message = {"role": "system", "content": result}
                     additional_system_messages.append(new_system_message)
                     messages.append(new_system_message)
 
-                    await reply_service_text(update, f"Найдено {len(documents)} заметки(-ок).")
-                    return ModelAnswer(answer, additional_system_messages, context_tokens, completion_tokens)
-
-                if function_call_name == "get_notes_by_query":
-                    search_query = function_args_dict["search_query"]
-                    start_date = function_args_dict.get("start_created_date", None)
-                    end_date = function_args_dict.get("end_created_date", None)
-
-                    documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
-                    if len(documents) == 0:
-                        await reply_service_text(update, "Заметки не найдены.")
-                        return ModelAnswer(None, [], context_tokens, completion_tokens)
-
-                    answer, system_message_body = get_notes_text(documents)
-                    new_system_message = {"role": "system", "content": system_message_body}
-                    additional_system_messages.append(new_system_message)
-                    messages.append(new_system_message)
                     inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
                     context_tokens += inner_answer.ctx_token
                     completion_tokens += inner_answer.completion_token
@@ -303,20 +246,140 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         context_tokens,
                         completion_tokens
                     )
+                except Exception as e:
+                    error_msg = f"Ошибка при получении данных о погоде: {e}"
+                    logger.error(error_msg, exc_info=True)
+                    await reply_service_text(update, "Произошла ошибка при получении данных о погоде. Попробуйте позже.")
+                    return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
-                if function_call_name == "remove_notes":
-                    note_ids = [int(x) for x in function_args_dict["note_ids"]]
-                    await remove_notes(note_ids)
-                    bot_reply = "Заметки удалены"
+            if function_call_name == "generate_image":
+                image_url = generate_image(
+                    function_args_dict.get("prompt"),
+                    function_args_dict.get("style")
+                )
+                if image_url is None:
+                    logger.warning(
+                        "Генерация изображения не удалась. prompt=%r, style=%r",
+                        function_args_dict.get("prompt"),
+                        function_args_dict.get("style"),
+                    )
+                    bot_reply = "Не удалось сгенерировать изображение. Попробуйте другой prompt или style."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+                await update.message.reply_photo(photo=image_url)  # type: ignore
+                bot_reply = "Я сделал :)"
+                return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "change_model":
+                new_model_name_str = function_args_dict["model"]
+                new_model_name = get_OpenAI_Models(new_model_name_str)
+                if new_model_name_str != model_name:
+                    await set_user_model(update.effective_user.id, new_model_name)
+                    await reply_service_text(update, f"Модель успешно изменена на {new_model_name_str}. Для возврата на стандартную модель сбросьте контекст (/reset)")
+                    return ModelAnswer(None, [], context_tokens, completion_tokens)
+
+            if function_call_name == "get_location_by_address":
+                address = function_args_dict["address"]
+                logger.info(f"Вызываем get_location_by_address для адреса: {address}")
+
+                try:
+                    geoloc = get_location_by_address(address)
+                    if geoloc is None:
+                        error_msg = f"Не удалось получить геолокацию для адреса '{address}'. Проверьте правильность написания адреса и доступность сервиса геокодирования."
+                        logger.error(error_msg)
+                        await reply_service_text(update, error_msg)
+                        return ModelAnswer(error_msg, additional_system_messages, context_tokens, completion_tokens)
+
+                    (latitude, longitude) = geoloc
+                    result = f"Геолокация для '{address}' установлена. Широта: {latitude}, Долгота: {longitude}"
+                    logger.info(result)
+
+                    new_system_message = {"role": "system", "content": result}
+                    additional_system_messages.append(new_system_message)
+                    messages.append(new_system_message)
+
+                    inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
+                    context_tokens += inner_answer.ctx_token
+                    completion_tokens += inner_answer.completion_token
+                    return ModelAnswer(
+                        inner_answer.bot_reply,
+                        additional_system_messages + inner_answer.additional_system_messages,
+                        context_tokens,
+                        completion_tokens
+                    )
+                except Exception as e:
+                    error_msg = f"Ошибка при получении геолокации для адреса '{address}': {e}"
+                    logger.error(error_msg, exc_info=True)
+                    await reply_service_text(update, f"Произошла ошибка при получении геолокации. Попробуйте позже.")
+                    return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "add_note":
+                title = function_args_dict["title"]
+                body = function_args_dict["body"]
+                tags = function_args_dict["tags"]
+                add_note(update.effective_user.id, title, body, tags)
+                await reply_service_text(update, f"Заметка '{title}' добавлена.")
+                bot_reply = "Я сделал :)"
+                return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "get_all_user_notes":
+                logger.info("Вызываем функцию получения всех заметок.")
+                documents = get_all_user_notes(update.effective_user.id)
+                if len(documents) == 0:
+                    await reply_service_text(update, "Заметки не найдены.")
+                    return ModelAnswer(None, [], context_tokens, completion_tokens)
+
+                answer, system_message_body = get_notes_text(documents)
+                new_system_message = {"role": "system", "content": system_message_body}
+                additional_system_messages.append(new_system_message)
+                messages.append(new_system_message)
+
+                await reply_service_text(update, f"Найдено {len(documents)} заметки(-ок).")
+                return ModelAnswer(answer, additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "get_notes_by_query":
+                search_query = function_args_dict["search_query"]
+                start_date = function_args_dict.get("start_created_date") or ""
+                end_date = function_args_dict.get("end_created_date") or ""
+
+                documents = get_notes_by_query(update.effective_user.id, search_query, start_date, end_date)
+                if len(documents) == 0:
+                    await reply_service_text(update, "Заметки не найдены.")
+                    return ModelAnswer(None, [], context_tokens, completion_tokens)
+
+                answer, system_message_body = get_notes_text(documents)
+                new_system_message = {"role": "system", "content": system_message_body}
+                additional_system_messages.append(new_system_message)
+                messages.append(new_system_message)
+                inner_answer = await get_model_answer(update, context, messages, recursion_depth + 1)
+                context_tokens += inner_answer.ctx_token
+                completion_tokens += inner_answer.completion_token
+                return ModelAnswer(
+                    inner_answer.bot_reply,
+                    additional_system_messages + inner_answer.additional_system_messages,
+                    context_tokens,
+                    completion_tokens
+                )
+
+            if function_call_name == "remove_notes":
+                note_ids = [int(x) for x in function_args_dict["note_ids"]]
+                await remove_notes(note_ids)
+                bot_reply = "Заметки удалены"
+                return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
    
         # Если функция не вызвалась, возвращаем обычный текстовый ответ:
         if isinstance(response, Response):
             bot_reply = (getattr(response, "output_text", None) or "").strip()
             if bot_reply == "":
+                logger.warning(
+                    "Пустой output_text без обработанного tool call. raw_output=%r",
+                    list(response.output or []),
+                )
                 bot_reply = "Произошла ошибка при обработке запроса."
+            else:
+                logger.info("Текстовый ответ модели успешно извлечён: %r", bot_reply[:500])
         else:
+            logger.error("Неожиданный тип ответа от get_simple_answer: %s, значение=%r", type(response), response)
             bot_reply = "Произошла ошибка при обработке запроса."
         
         return ModelAnswer(bot_reply,
