@@ -23,7 +23,7 @@ from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="20.2"
+version="21.0"
 
 
 # URL вебхука

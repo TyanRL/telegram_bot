@@ -7,6 +7,7 @@ from typing import Tuple
 import openai
 import requests
 from telegram import Update
+from utils.openrouter_images import generate_image_openrouter
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -76,29 +77,19 @@ async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE
     await add_location_button(update, context)
 
 # 
-def generate_image(openai_client, prompt: str, style: str):
-    response = None
+def generate_image(prompt: str | None, style: str | None):
     try:
         if prompt is None or prompt == "":
             logging.info("Пустой запрос на генерацию изображения")
-            return
-        # Если стиль не задан или не допустим, устанавливаем стиль по умолчанию
-        if not style or style not in ['vivid', 'natural']:
-            style = 'vivid'
-        response = openai_client.images.generate(
-            model='dall-e-3',
-            prompt=prompt,
-            n=1,
-            size='1024x1024',
-            #quality='hd',
-            style=style
-        )
-        image = response.data[0]
-        image_url = image.url
+            return None
+        image_urls = generate_image_openrouter(prompt=prompt)
+        if not image_urls:
+            logging.error("OpenRouter не вернул изображений")
+            return None
+        return image_urls[0]
     except Exception as e:
-        logging.error("Ошибка при генерации изображения: " + str(e))
-        return
-    return image_url
+        logging.error("Ошибка при генерации изображения через OpenRouter: " + str(e), exc_info=True)
+        return None
 
 def transcribe_audio(audio_filename):
     try:
@@ -210,7 +201,6 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
                 if function_call_name == "generate_image":
                     image_url = generate_image(
-                        openai_client,
                         function_args_dict.get("prompt"),
                         function_args_dict.get("style")
                     )
