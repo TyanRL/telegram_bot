@@ -23,7 +23,7 @@ from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="20.1"
+version="20.2"
 
 
 # URL вебхука
@@ -71,7 +71,7 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                     "role": "user",
                     "content": [
                                 {"type": "input_text", "text": user_message},
-                                {"type": "input_image", "image_url": {"url": f"data:{img_type};base64,{img_b64_str}"}},
+                                {"type": "input_image", "image_url": f"data:{img_type};base64,{img_b64_str}"},
                     ],
                 })
             except Exception as e:
