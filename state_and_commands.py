@@ -104,22 +104,44 @@ def set_bot_version(bot_version: str) -> None:
     version = bot_version
 
 async def reply_text(update: Update, message:str)->None:
-    escaped_text = escape_markdown(message)
     results = await telegramify(message)
+
+    if not results:
+        escaped_text = escape_markdown(message)
+        await update.message.reply_text(escaped_text, parse_mode=PARSE_MODE) # type: ignore
+        return
+
     for item in results:
-        if isinstance(item,  telegramify_markdown.type.Text):
-           text_item:telegramify_markdown.type.Text= item
-           escaped_text=text_item.content
+        if isinstance(item, telegramify_markdown.type.Text):
+            text_item: telegramify_markdown.type.Text = item
+            await update.message.reply_text(text_item.content, parse_mode=PARSE_MODE) # type: ignore
         elif isinstance(item, telegramify_markdown.type.File):
-           file_item:telegramify_markdown.type.File=item
-           await update.message.reply_document(file_item.file_name) # type: ignore
-           logging.info(f"Выслан файл: {file_item.file_name}")
+            file_item: telegramify_markdown.type.File = item
+            file_path = getattr(file_item, 'file_path', None) or getattr(file_item, 'file_name', None)
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'rb') as f:
+                        await update.message.reply_document(document=f, filename=os.path.basename(file_path)) # type: ignore
+                    logging.info(f"Выслан файл: {file_path}")
+                except Exception as e:
+                    logging.error(f"Ошибка при отправке файла {file_path}: {e}", exc_info=True)
+                    await update.message.reply_text(f"[Ошибка отправки файла: {os.path.basename(file_path)}]", parse_mode=PARSE_MODE) # type: ignore
+            else:
+                logging.warning(f"Файл не найден: {file_path}")
+                await update.message.reply_text(f"[Файл не найден: {getattr(file_item, 'file_name', 'unknown')}]", parse_mode=PARSE_MODE) # type: ignore
         elif isinstance(item, telegramify_markdown.type.Photo):
-           await update.message.reply_document(item.file_path) # type: ignore
-           logging.info(f"Выслано фото: {item.url}") # type: ignore
-
-
-    await update.message.reply_text(escaped_text, parse_mode=PARSE_MODE) # type: ignore
+            photo_path = getattr(item, 'file_path', None)
+            if photo_path and os.path.exists(photo_path):
+                try:
+                    with open(photo_path, 'rb') as f:
+                        await update.message.reply_photo(photo=f) # type: ignore
+                    logging.info(f"Выслано фото: {getattr(item, 'url', photo_path)}") # type: ignore
+                except Exception as e:
+                    logging.error(f"Ошибка при отправке фото {photo_path}: {e}", exc_info=True)
+                    await update.message.reply_text("[Ошибка отправки фото]", parse_mode=PARSE_MODE) # type: ignore
+            else:
+                logging.warning(f"Фото не найдено: {photo_path}")
+                await update.message.reply_text("[Фото не найдено]", parse_mode=PARSE_MODE) # type: ignore
 
 async def reply_service_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message, version=2)
