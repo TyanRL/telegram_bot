@@ -22,7 +22,7 @@ def extract_non_mermaid_codeblocks(text: str):
         if lang == "mermaid":
             return match.group(0)
 
-        placeholder = f"@@CODEBLOCK_{len(codeblocks)}@@"
+        placeholder = f"CODEBLOCK{len(codeblocks)}CODEBLOCK"
         codeblocks.append((placeholder, lang, code))
         return placeholder
 
@@ -32,9 +32,10 @@ def extract_non_mermaid_codeblocks(text: str):
 
 def restore_codeblocks(text: str, codeblocks: list[tuple[str, str, str]]) -> str:
     for placeholder, lang, code in codeblocks:
-        # Безопасно оформляем как Telegram MarkdownV2 code block
-        escaped_code = escape_markdown(code.rstrip("\n"), version=2)
-        block = f"```{escaped_code}```"
+        # Внутри ```...``` MarkdownV2 не требует экранирования
+        code = code.rstrip("\n")
+        lang_part = f"{lang}\n" if lang else "\n"
+        block = f"```{lang_part}{code}\n```"
         text = text.replace(placeholder, block)
     return text
 
