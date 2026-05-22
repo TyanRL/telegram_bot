@@ -42,6 +42,8 @@ user_model = SafeDict()
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
+logger = logging.getLogger(__name__)
+
 # получает название модели в виде enum из строки
 def get_OpenAI_Models(model: str) -> OpenAI_Models:
     # Проверка на наличие модели в перечислении по значению
@@ -104,6 +106,8 @@ def set_bot_version(bot_version: str) -> None:
     version = bot_version
 
 async def reply_text(update: Update, message:str)->None:
+    logger.info(f"текст от модели: {message}")
+    
     results = await telegramify(message)
 
     if not results:
@@ -122,12 +126,12 @@ async def reply_text(update: Update, message:str)->None:
                 try:
                     with open(file_path, 'rb') as f:
                         await update.message.reply_document(document=f, filename=os.path.basename(file_path)) # type: ignore
-                    logging.info(f"Выслан файл: {file_path}")
+                    logger.info(f"Выслан файл: {file_path}")
                 except Exception as e:
-                    logging.error(f"Ошибка при отправке файла {file_path}: {e}", exc_info=True)
+                    logger.error(f"Ошибка при отправке файла {file_path}: {e}", exc_info=True)
                     await update.message.reply_text(f"[Ошибка отправки файла: {os.path.basename(file_path)}]", parse_mode=PARSE_MODE) # type: ignore
             else:
-                logging.warning(f"Файл не найден: {file_path}")
+                logger.warning(f"Файл не найден: {file_path}")
                 await update.message.reply_text(f"[Файл не найден: {getattr(file_item, 'file_name', 'unknown')}]", parse_mode=PARSE_MODE) # type: ignore
         elif isinstance(item, telegramify_markdown.type.Photo):
             photo_path = getattr(item, 'file_path', None)
@@ -135,12 +139,12 @@ async def reply_text(update: Update, message:str)->None:
                 try:
                     with open(photo_path, 'rb') as f:
                         await update.message.reply_photo(photo=f) # type: ignore
-                    logging.info(f"Выслано фото: {getattr(item, 'url', photo_path)}") # type: ignore
+                    logger.info(f"Выслано фото: {getattr(item, 'url', photo_path)}") # type: ignore
                 except Exception as e:
-                    logging.error(f"Ошибка при отправке фото {photo_path}: {e}", exc_info=True)
+                    logger.error(f"Ошибка при отправке фото {photo_path}: {e}", exc_info=True)
                     await update.message.reply_text("[Ошибка отправки фото]", parse_mode=PARSE_MODE) # type: ignore
             else:
-                logging.warning(f"Фото не найдено: {photo_path}")
+                logger.warning(f"Фото не найдено: {photo_path}")
                 await update.message.reply_text("[Фото не найдено]", parse_mode=PARSE_MODE) # type: ignore
 
 async def reply_service_text(update: Update, message:str)->None:
@@ -160,14 +164,14 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await user_histories.set(user.id, []) # type: ignore
     await user_model.set(user.id, None) # type: ignore
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
-    logging.info(f"Context for user {user.id} is reset") # type: ignore
+    logger.info(f"Context for user {user.id} is reset") # type: ignore
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
 
     if not await in_user_list(user):
         await reply_service_text(update,f"Извините, у вас нет доступа к этому боту. Пользователь {user}")
-        logging.error(f"Нет доступа: {user}. Допустимые пользователи: {get_admins()}")
+        logger.error(f"Нет доступа: {user}. Допустимые пользователи: {get_admins()}")
 
         return
     await reply_text(update, 'Привет! Я бот, интегрированный с ChatGPT. Задайте мне вопрос.')
@@ -283,7 +287,7 @@ async def send_service_notification(update: Update, context: ContextTypes.DEFAUL
         
         await send_service_notification_inner(update, message_text, user_id_str)
     except Exception as e:
-        logging.error(f"Ошибка при обработке оповещения: {e}", exc_info=True)
+        logger.error(f"Ошибка при обработке оповещения: {e}", exc_info=True)
         await reply_service_text(update,f"Ошибка при разборе аргументов массового оповещения пользователей.")
         return
 
@@ -311,9 +315,9 @@ async def send_service_notification_inner(update: Update, message:str, user_id_s
                 continue
             try:
                 await send_service_text(user_id, f"Системное оповещение:\n{message}")
-                logging.info(f"Оповещение успешно отправлено пользователю {user_id}")
+                logger.info(f"Оповещение успешно отправлено пользователю {user_id}")
             except Exception as e:
-                logging.error(f"Ошибка при отправке оповещение пользователю {user_id}: {e}", exc_info=True)
+                logger.error(f"Ошибка при отправке оповещение пользователю {user_id}: {e}", exc_info=True)
                 await reply_service_text(update,f"Ошибка при отправке оповещения пользователю {user_id}: {e}")
                 return
         await reply_service_text(update,f"Оповещение успешно отправлено пользователям {temp_user_ids}")
