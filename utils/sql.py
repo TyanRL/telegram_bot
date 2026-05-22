@@ -3,7 +3,7 @@ import logging
 import time
 import mysql.connector
 
-from common_types import SafeList
+from core.common_types import SafeList
 
 # Получение параметров подключения из переменных окружения
 MYSQL_HOST = os.getenv('MYSQL_ADDON_HOST')

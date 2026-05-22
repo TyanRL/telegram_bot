@@ -8,16 +8,11 @@ from zoneinfo import ZoneInfo
 from enum import Enum, unique
 from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot, User
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
     ContextTypes,
-    filters,
 )
-from telegramify_markdown import telegramify
-import telegramify_markdown
 
-from common_types import SafeDict
+from core.common_types import SafeDict
+from core.md_clean import clean_message
 from utils.sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
 from telegram.helpers import escape_markdown
 @unique
@@ -27,7 +22,7 @@ class OpenAI_Models(Enum):
     SEARCH_MODEL="gpt-5.1"
 
 
-PARSE_MODE="MarkdownV2"
+MDv2_PARSE_MODE="MarkdownV2"
 
 tg_bot_candidate = os.getenv('TELEGRAM_BOT_TOKEN')
 if tg_bot_candidate is None:
@@ -107,36 +102,18 @@ def set_bot_version(bot_version: str) -> None:
 
 async def reply_text(update: Update, message:str)->None:
     logger.info(f"текст от модели: {message}")
-    
-    results = await telegramify(message)
-    can_use_telegramify=True
-    for item in results:
-        if isinstance(item, telegramify_markdown.type.File):
-            logger.warning("reply_text получил File item, пропускаю, так как функция предназначена только для текста")
-            can_use_telegramify=False
-        elif isinstance(item, telegramify_markdown.type.Photo):
-            logger.warning("reply_text получил Photo item, пропускаю, так как функция предназначена только для текста")
-            can_use_telegramify=False
-    
-    
-    if not results or not can_use_telegramify:
-        escaped_text = escape_markdown(message, version=2)
-        await update.message.reply_text(escaped_text, parse_mode=PARSE_MODE) # type: ignore
-        return
+    escaped_text, parse_mode = await clean_message(message)
+    await update.message.reply_text(escaped_text, parse_mode=parse_mode) # type: ignore
 
-    for item in results:
-        if isinstance(item, telegramify_markdown.type.Text):
-            text_item: telegramify_markdown.type.Text = item
-            await update.message.reply_text(text_item.content, parse_mode=PARSE_MODE) # type: ignore
             
 
 async def reply_service_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(f"_{escaped_text}_", parse_mode=PARSE_MODE) # type: ignore
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE) # type: ignore
 
 async def send_service_text(user_id:int, message:str):
     escaped_text = escape_markdown(message, version=2)
-    await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=PARSE_MODE)
+    await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)
 
 
 
@@ -166,7 +143,7 @@ async def add_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE
     reply_markup = ReplyKeyboardMarkup([[location_button]], resize_keyboard=True)
     message = "Пожалуйста, нажмите на кнопку ниже, чтобы отправить боту свою геолокацию."
     escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(f"_{escaped_text}_", parse_mode=PARSE_MODE,reply_markup=reply_markup) # type: ignore
+    await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE,reply_markup=reply_markup) # type: ignore
     
 
 

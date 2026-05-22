@@ -4,7 +4,7 @@ import os
 import re
 from elasticsearch import Elasticsearch
 
-from common_types import dict_to_markdown
+from core.common_types import dict_to_markdown
 
 # Получите URL кластера из переменной окружения
 bonsai_url = os.getenv('BONSAI_URL')

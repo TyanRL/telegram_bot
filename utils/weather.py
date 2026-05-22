@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import os
 import requests
 
-from common_types import dict_to_markdown
+from core.common_types import dict_to_markdown
 
 
 weather_api_key=os.getenv('OPENWEATHERMAP_API_KEY')

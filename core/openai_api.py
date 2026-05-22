@@ -17,10 +17,10 @@ from telegram.ext import (
 )
 from openai import OpenAI
 from openai.types.responses import Response
-from common_types import dict_to_markdown
+from core.common_types import dict_to_markdown
 from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
 from utils.google_search import get_search_results
-from state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
+from core.state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 import base64

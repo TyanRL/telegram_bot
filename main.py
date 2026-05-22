@@ -18,12 +18,12 @@ from aiohttp import web
 
 
 from utils.elastic import get_all_user_notes
-from openai_api import get_model_answer, transcribe_audio
-from state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
+from core.openai_api import get_model_answer, transcribe_audio
+from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image, start
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="21.5"
+version="22.0"
 
 
 # URL вебхука
