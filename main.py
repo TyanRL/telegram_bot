@@ -14,6 +14,7 @@ from telegram.ext import (
     filters,
     Application
 )
+from telegram.request import HTTPXRequest
 from aiohttp import web
 
 
@@ -23,7 +24,7 @@ from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_loca
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="23.0"
+version="23.1"
 
 
 # URL вебхука
@@ -304,8 +305,15 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     set_bot_version(version)
-    # Инициализация приложения
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    # Инициализация приложения с увеличенными таймаутами для загрузки изображений
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        read_timeout=30,
+        write_timeout=60,
+        connect_timeout=10,
+        pool_timeout=10,
+    )
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).request(request).build()
 
     # Добавление обработчиков
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

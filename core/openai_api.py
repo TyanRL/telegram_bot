@@ -26,6 +26,7 @@ from utils.yandex_maps import get_location_by_address
 import base64
 from io import BytesIO
 from telegram import InputFile
+from PIL import Image
 
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,22 @@ functions=[
 async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_location_button(update, context)
 
-# 
+#
+def _prepare_image_for_telegram(b64_data: str, max_size: int = 1280, quality: int = 88) -> BytesIO:
+    """Декодирует base64, ресайзит и конвертирует изображение в JPEG для отправки в Telegram."""
+    image_bytes = base64.b64decode(b64_data)
+    img = Image.open(BytesIO(image_bytes))
+    # Конвертируем в RGB, чтобы избежать проблем с альфа-каналом при сохранении в JPEG
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    # Уменьшаем размер, сохраняя пропорции
+    img.thumbnail((max_size, max_size))
+    bio = BytesIO()
+    img.save(bio, format="JPEG", quality=quality, optimize=True)
+    bio.seek(0)
+    bio.name = "generated.jpg"
+    return bio
+
 def generate_image(prompt: str | None):
     try:
         if prompt is None or prompt == "":
@@ -265,9 +281,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 try:
                     if image_data_url.startswith("data:"):
                         header, b64_data = image_data_url.split(",", 1)
-                        image_bytes = base64.b64decode(b64_data)
-                        bio = BytesIO(image_bytes)
-                        bio.name = "generated.png"
+                        bio = _prepare_image_for_telegram(b64_data)
                         await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
                     else:
                         await update.message.reply_photo(photo=image_data_url)  # type: ignore
@@ -317,9 +331,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 try:
                     if image_data_url.startswith("data:"):
                         header, b64_data = image_data_url.split(",", 1)
-                        image_bytes = base64.b64decode(b64_data)
-                        bio = BytesIO(image_bytes)
-                        bio.name = "generated.png"
+                        bio = _prepare_image_for_telegram(b64_data)
                         await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
                     else:
                         await update.message.reply_photo(photo=image_data_url)  # type: ignore
