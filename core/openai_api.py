@@ -3,24 +3,21 @@ from functools import partial
 import json
 import logging
 import os
-from typing import Tuple
-import openai
-import requests
 from telegram import Update
 from utils.openrouter_images import generate_image_openrouter
+from utils.openrouter_videos import (
+    download_video,
+    poll_video_generation,
+    submit_video_generation,
+    OpenRouterVideoError,
+)
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
     ContextTypes,
-    filters,
 )
 from openai import OpenAI
 from openai.types.responses import Response
-from core.common_types import dict_to_markdown
 from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
-from utils.google_search import get_search_results
-from core.state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_text, set_user_generation_source_image, set_user_model
+from core.state_and_commands import add_location_button, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_text, set_user_generation_source_image, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 import base64
@@ -134,6 +131,21 @@ functions=[
             "required": ["prompt"]
         }
     },
+    {
+        "type": "function",
+        "name": "generate_video",
+        "description": "Сгенерировать видео или анимацию по текстовому описанию пользователя. Если у пользователя есть сохранённое изображение, используй его как основу для видео. Используй, когда пользователь просит видео, анимацию, оживить картинку или сделать видео на основе изображения.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Запрос пользователя, по которому сгенерируется видео"
+                },
+            },
+            "required": ["prompt"]
+        }
+    },
     { "type": "web_search" },
 ]
 
@@ -160,12 +172,12 @@ def _prepare_image_for_telegram(b64_data: str, max_size: int = 1280, quality: in
     bio.name = "generated.jpg"
     return bio
 
-def generate_image(prompt: str | None):
+async def generate_image(prompt: str | None):
     try:
         if prompt is None or prompt == "":
             logger.info("Пустой запрос на генерацию изображения")
             return None
-        image_urls = generate_image_openrouter(prompt=prompt)
+        image_urls = await generate_image_openrouter(prompt=prompt)
         if not image_urls:
             logger.error("OpenRouter не вернул изображений")
             return None
@@ -268,7 +280,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_image":
-                image_data_url = generate_image(
+                image_data_url = await generate_image(
                 function_args_dict.get("prompt"),
                 )
                 if image_data_url is None:
@@ -317,7 +329,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     bot_reply = "Не удалось сгенерировать изображение: запрос пустой."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
                 try:
-                    image_urls = generate_image_openrouter(prompt=prompt, input_images=[data_url])
+                    image_urls = await generate_image_openrouter(prompt=prompt, input_images=[data_url])
                     if not image_urls:
                         logger.error("OpenRouter не вернул изображений для img2img")
                         bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
@@ -340,6 +352,77 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
 
                 # Очищаем generation source после успешной генерации, чтобы не переиспользовать случайно
+                await set_user_generation_source_image(user_id, None)
+                bot_reply = "Я сделал :)"
+                return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "generate_video":
+                user_id = update.effective_user.id
+                prompt = function_args_dict.get("prompt")
+                if not prompt:
+                    logger.warning("Пустой prompt для generate_video")
+                    bot_reply = "Не удалось сгенерировать видео: запрос пустой."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                # Проверяем наличие сохранённого изображения для использования как основы
+                source_image_dict = await get_user_generation_source_image(user_id)
+                input_references = None
+                if source_image_dict is not None:
+                    try:
+                        img_type = source_image_dict["image_type"]
+                        img_b64_str = source_image_dict["image"]
+                        data_url = f"data:{img_type};base64,{img_b64_str}"
+                        input_references = [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url},
+                            }
+                        ]
+                    except Exception as e:
+                        logger.error(f"Ошибка при сборке data URL для видео: {e}", exc_info=True)
+
+                try:
+                    job_id, polling_url = await submit_video_generation(prompt, input_references)
+                    logger.info(f"Video job submitted: {job_id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке запроса на генерацию видео: {e}", exc_info=True)
+                    bot_reply = "Не удалось начать генерацию видео. Попробуйте позже."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                await reply_service_text(update, "Видео генерируется, подождите...")
+
+                try:
+                    unsigned_urls = await poll_video_generation(polling_url)
+                    video_url = unsigned_urls[0]
+                    video_path = await download_video(video_url)
+                except OpenRouterVideoError as e:
+                    logger.error(f"Ошибка при генерации видео: {e}", exc_info=True)
+                    await reply_service_text(update, f"Не удалось сгенерировать видео: {e}")
+                    return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
+                except Exception as e:
+                    logger.error(f"Неожиданная ошибка при генерации видео: {e}", exc_info=True)
+                    await reply_service_text(update, "Произошла ошибка при генерации видео.")
+                    return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
+
+                try:
+                    with open(video_path, "rb") as video_file:
+                        await update.message.reply_video(video=InputFile(video_file))  # type: ignore
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке видео как video: {e}", exc_info=True)
+                    try:
+                        with open(video_path, "rb") as video_file:
+                            await update.message.reply_document(document=InputFile(video_file))  # type: ignore
+                    except Exception as e2:
+                        logger.error(f"Ошибка при отправке видео как document: {e2}", exc_info=True)
+                        await reply_service_text(update, "Видео сгенерировано, но не удалось отправить его в Telegram.")
+                        return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
+                finally:
+                    try:
+                        os.remove(video_path)
+                    except Exception:
+                        pass
+
+                # Очищаем generation source после успешной генерации
                 await set_user_generation_source_image(user_id, None)
                 bot_reply = "Я сделал :)"
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
@@ -384,7 +467,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 except Exception as e:
                     error_msg = f"Ошибка при получении геолокации для адреса '{address}': {e}"
                     logger.error(error_msg, exc_info=True)
-                    await reply_service_text(update, f"Произошла ошибка при получении геолокации. Попробуйте позже.")
+                    await reply_service_text(update, "Произошла ошибка при получении геолокации. Попробуйте позже.")
                     return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "add_note":

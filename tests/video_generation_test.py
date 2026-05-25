@@ -17,7 +17,8 @@ response = requests.post(
   },
   data=json.dumps({
     "model": "x-ai/grok-imagine-video",
-    "prompt": "A serene mountain landscape at sunset with clouds drifting by"
+    "prompt": "A serene mountain landscape at sunset with clouds drifting by",
+    "resolution":"480p"
   })
 )
 print(response.status_code)

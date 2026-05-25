@@ -230,7 +230,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE)-> None:
     user = update.effective_user
     if await in_user_list(user) and user is not None:
         model = await get_user_model(user.id)
-        info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация картинок, распознавание голосовых сообщений,  распознавание картинок, поиск в интернете с помощью Google, умное сохранение и выдача произвольной текстовой информации в заметках - личный секретарь."
+        info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация и редактрирование картинок, генерация видео, распознавание голосовых сообщений,  распознавание картинок, поиск в интернете с помощью Google."
         await reply_service_text(update,info)
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")
@@ -255,7 +255,7 @@ async def send_service_notification(update: Update, context: ContextTypes.DEFAUL
         await send_service_notification_inner(update, message_text, user_id_str)
     except Exception as e:
         logger.error(f"Ошибка при обработке оповещения: {e}", exc_info=True)
-        await reply_service_text(update,f"Ошибка при разборе аргументов массового оповещения пользователей.")
+        await reply_service_text(update,"Ошибка при разборе аргументов массового оповещения пользователей.")
         return
 
 

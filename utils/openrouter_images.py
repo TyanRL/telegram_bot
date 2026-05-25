@@ -2,7 +2,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def _validate_data_image_url(url: str) -> None:
         )
 
 
-def generate_image_openrouter(
+async def generate_image_openrouter(
     prompt: str,
     input_images: Optional[List[str]] = None,
     model: Optional[str] = None,
@@ -81,13 +81,14 @@ def generate_image_openrouter(
     logger.info(f"POST {openrouter_base_url}")
 
     try:
-        response = requests.post(
-            openrouter_base_url,
-            headers=headers,
-            json=payload,
-            timeout=120,
-        )
-    except requests.RequestException as e:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                openrouter_base_url,
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+    except httpx.RequestError as e:
         logger.error(f"Ошибка HTTP при обращении к OpenRouter: {e}", exc_info=True)
         raise OpenRouterImageError("Ошибка HTTP при обращении к OpenRouter") from e
 
@@ -98,7 +99,7 @@ def generate_image_openrouter(
         f"OpenRouter response: status={response.status_code} content_type={content_type} body_preview={response_preview!r}",
     )
 
-    if not response.ok:
+    if not response.is_success:
         raise OpenRouterImageError(
             f"OpenRouter вернул HTTP {response.status_code}: {response_preview}"
         )

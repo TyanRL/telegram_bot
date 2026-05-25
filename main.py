@@ -24,7 +24,7 @@ from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_loca
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="23.1"
+version="24.0"
 
 
 # URL вебхука
@@ -42,9 +42,7 @@ f"""
 Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
 1. Если пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
 2. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию на основе ранее присланного изображения, используй функцию generate_image_from_image.
-
-
-
+3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения или без него, используй функцию generate_video.
 """,
     }
     return system_message
