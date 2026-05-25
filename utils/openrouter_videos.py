@@ -157,9 +157,10 @@ async def download_video(url: str) -> str:
     Returns:
         Путь к сохранённому временному файлу.
     """
+    headers = _get_headers()
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=120)
+            response = await client.get(url, headers=headers, timeout=120)
             response.raise_for_status()
     except httpx.RequestError as e:
         logger.error(f"Ошибка при скачивании видео: {e}", exc_info=True)
