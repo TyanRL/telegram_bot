@@ -55,7 +55,7 @@ async def clean_message(message: str) -> tuple[str, str | None]:
     text_parts = []
 
     for item in results:
-        logger.info("telegramify item type: %s", type(item))
+        logger.info(f"telegramify item type: {type(item)}")
 
         if isinstance(item, telegramify_markdown.type.Text):
             text_parts.append(item.content)

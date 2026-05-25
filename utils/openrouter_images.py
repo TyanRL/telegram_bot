@@ -38,8 +38,18 @@ def _get_headers() -> Dict[str, str]:
     return headers
 
 
+def _validate_data_image_url(url: str) -> None:
+    if not isinstance(url, str) or not url:
+        raise OpenRouterImageError("Изображение должно быть непустой строкой")
+    if not url.startswith("data:image/") or ";base64," not in url:
+        raise OpenRouterImageError(
+            "Поддерживаются только data:image/...;base64,... URL"
+        )
+
+
 def generate_image_openrouter(
     prompt: str,
+    input_images: Optional[List[str]] = None,
     model: Optional[str] = None,
     **kwargs: Any,
 ) -> List[str]:
@@ -52,7 +62,13 @@ def generate_image_openrouter(
 
     messages = kwargs.pop("messages", None)
     if messages is None:
-        messages = [{"role": "user", "content": prompt}]
+        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image_data_url in input_images or []:
+            _validate_data_image_url(image_data_url)
+            content.append(
+                {"type": "image_url", "image_url": {"url": image_data_url}}
+            )
+        messages = [{"role": "user", "content": content}]
 
     payload: Dict[str, Any] = {
         "model": model,
@@ -61,8 +77,8 @@ def generate_image_openrouter(
     }
     payload.update(kwargs)
 
-    logger.info("Image model: %s", model)
-    logger.info("POST %s", openrouter_base_url)
+    logger.info(f"Image model: {model}")
+    logger.info(f"POST {openrouter_base_url}")
 
     try:
         response = requests.post(
@@ -72,17 +88,14 @@ def generate_image_openrouter(
             timeout=120,
         )
     except requests.RequestException as e:
-        logger.error("Ошибка HTTP при обращении к OpenRouter: %s", e, exc_info=True)
+        logger.error(f"Ошибка HTTP при обращении к OpenRouter: {e}", exc_info=True)
         raise OpenRouterImageError("Ошибка HTTP при обращении к OpenRouter") from e
 
     content_type = response.headers.get("Content-Type", "")
     response_preview = response.text[:1000]
 
     logger.info(
-        "OpenRouter response: status=%s content_type=%s body_preview=%r",
-        response.status_code,
-        content_type,
-        response_preview,
+        f"OpenRouter response: status={response.status_code} content_type={content_type} body_preview={response_preview!r}",
     )
 
     if not response.ok:

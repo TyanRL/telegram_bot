@@ -33,6 +33,7 @@ user_histories = SafeDict()
 translate_mode=SafeDict()
 
 user_image = SafeDict()
+user_generation_source_image = SafeDict()
 user_model = SafeDict()
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -64,6 +65,11 @@ async def set_user_image(user_id:int, image:dict|None)->None:
     await user_image.set(user_id,image)
 async def get_user_image(user_id:int)->str:
     return await user_image.get(user_id, None)
+
+async def set_user_generation_source_image(user_id:int, image:dict|None)->None:
+    await user_generation_source_image.set(user_id,image)
+async def get_user_generation_source_image(user_id:int)->dict|None:
+    return await user_generation_source_image.get(user_id, None)
 
 def get_all_histories()->SafeDict:
     return user_histories
@@ -123,6 +129,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await user_histories.set(user.id, []) # type: ignore
     await user_model.set(user.id, None) # type: ignore
+    await user_generation_source_image.set(user.id, None) # type: ignore
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logger.info(f"Context for user {user.id} is reset") # type: ignore
 

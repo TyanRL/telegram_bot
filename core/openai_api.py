@@ -20,7 +20,7 @@ from openai.types.responses import Response
 from core.common_types import dict_to_markdown
 from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
 from utils.google_search import get_search_results
-from core.state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_model, get_voice_recognition_model, reply_service_text, set_user_model
+from core.state_and_commands import OpenAI_Models, add_location_button, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_text, set_user_generation_source_image, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 import base64
@@ -37,9 +37,7 @@ def _normalize_function_args(function_args):
             return json.loads(function_args)
         except Exception as e:
             logger.warning(
-                "Не удалось распарсить аргументы tool call как JSON: %s. Значение: %r",
-                e,
-                function_args,
+                f"Не удалось распарсить аргументы tool call как JSON: {e}. Значение: {function_args!r}",
                 exc_info=True,
             )
             return {}
@@ -49,9 +47,7 @@ def _normalize_function_args(function_args):
         return {}
 
     logger.warning(
-        "Неожиданный тип аргументов tool call: %s. Значение: %r",
-        type(function_args),
-        function_args,
+        f"Неожиданный тип аргументов tool call: {type(function_args)}. Значение: {function_args!r}",
     )
     return {}
 
@@ -59,9 +55,7 @@ def _normalize_function_args(function_args):
 def _extract_function_call(response: Response):
     output_items = list(response.output or [])
     logger.info(
-        "Responses API output: output_text=%r, items=%s",
-        getattr(response, "output_text", None),
-        [getattr(item, "type", type(item).__name__) for item in output_items],
+        f"Responses API output: output_text={getattr(response, 'output_text', None)!r}, items={[getattr(item, 'type', type(item).__name__) for item in output_items]}",
     )
 
     for item in output_items:
@@ -71,9 +65,7 @@ def _extract_function_call(response: Response):
             function_call_name = getattr(item, "name", None)
             function_args = getattr(item, "arguments", None)
             logger.info(
-                "Найден function tool call: name=%s, args_type=%s",
-                function_call_name,
-                type(function_args),
+                f"Найден function tool call: name={function_call_name}, args_type={type(function_args)}",
             )
             return function_call_name, _normalize_function_args(function_args)
 
@@ -82,16 +74,12 @@ def _extract_function_call(response: Response):
             function_call_name = getattr(tool, "name", None) if tool else None
             function_args = getattr(tool, "arguments", None) if tool else None
             logger.info(
-                "Найден legacy tool call: name=%s, args_type=%s",
-                function_call_name,
-                type(function_args),
+                f"Найден legacy tool call: name={function_call_name}, args_type={type(function_args)}",
             )
             return function_call_name, _normalize_function_args(function_args)
 
     logger.warning(
-        "В ответе Responses API не найден tool call. output_text=%r, raw_output=%r",
-        getattr(response, "output_text", None),
-        output_items,
+        f"В ответе Responses API не найден tool call. output_text={getattr(response, 'output_text', None)!r}, raw_output={output_items!r}",
     )
     return None, {}
 
@@ -118,13 +106,28 @@ functions=[
     {
         "type": "function",
         "name": "generate_image",
-        "description": "Сгенерировать изображение по запросу пользователя.",
+        "description": "Сгенерировать изображение только по текстовому описанию пользователя. Используй, когда пользователь просит нарисовать что-то с нуля без опоры на ранее присланное изображение.",
         "parameters": {
             "type": "object",
             "properties": {
                 "prompt": {
                     "type": "string",
                     "description": "Запрос пользователя, по которому сгенерируется картинка"
+                },
+            },
+            "required": ["prompt"]
+        }
+    },
+    {
+        "type": "function",
+        "name": "generate_image_from_image",
+        "description": "Сгенерировать или преобразовать изображение на основе последней картинки, отправленной пользователем, с учетом текстовой инструкции. Используй, когда пользователь просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию на основе ранее присланного изображения.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Инструкция, как преобразовать изображение пользователя"
                 },
             },
             "required": ["prompt"]
@@ -202,9 +205,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         if isinstance(response, Response):
             function_call_name, function_args_dict = _extract_function_call(response)
             logger.info(
-                "Результат разбора tool call: name=%s, args=%r",
-                function_call_name,
-                function_args_dict,
+                f"Результат разбора tool call: name={function_call_name}, args={function_args_dict!r}",
             )
 
             if function_call_name == "request_geolocation":
@@ -256,8 +257,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 )
                 if image_data_url is None:
                     logger.warning(
-                    "Генерация изображения не удалась. prompt=%r",
-                    function_args_dict.get("prompt"),
+                    f"Генерация изображения не удалась. prompt={function_args_dict.get('prompt')!r}",
                     )
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
@@ -272,9 +272,63 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     else:
                         await update.message.reply_photo(photo=image_data_url)  # type: ignore
                 except Exception as e:
-                    logger.error("Ошибка при отправке картинки в Telegram: %s", e, exc_info=True)
+                    logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
 
+                bot_reply = "Я сделал :)"
+                return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+            if function_call_name == "generate_image_from_image":
+                user_id = update.effective_user.id
+                source_image_dict = await get_user_generation_source_image(user_id)
+                if source_image_dict is None:
+                    logger.warning(
+                        f"generate_image_from_image вызван, но у пользователя {user_id} нет сохраненного изображения",
+                    )
+                    bot_reply = "Сначала отправьте изображение, которое будет использоваться как основа для генерации."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                try:
+                    img_type = source_image_dict["image_type"]
+                    img_b64_str = source_image_dict["image"]
+                    data_url = f"data:{img_type};base64,{img_b64_str}"
+                except Exception as e:
+                    logger.error(f"Ошибка при сборке data URL из сохраненного изображения: {e}", exc_info=True)
+                    bot_reply = "Не удалось подготовить исходное изображение для генерации."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                prompt = function_args_dict.get("prompt")
+                if not prompt:
+                    logger.warning("Пустой prompt для generate_image_from_image")
+                    bot_reply = "Не удалось сгенерировать изображение: запрос пустой."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+                try:
+                    image_urls = generate_image_openrouter(prompt=prompt, input_images=[data_url])
+                    if not image_urls:
+                        logger.error("OpenRouter не вернул изображений для img2img")
+                        bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
+                        return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+                    image_data_url = image_urls[0]
+                except Exception as e:
+                    logger.error(f"Ошибка при генерации изображения через OpenRouter (img2img): {e}", exc_info=True)
+                    bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                try:
+                    if image_data_url.startswith("data:"):
+                        header, b64_data = image_data_url.split(",", 1)
+                        image_bytes = base64.b64decode(b64_data)
+                        bio = BytesIO(image_bytes)
+                        bio.name = "generated.png"
+                        await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
+                    else:
+                        await update.message.reply_photo(photo=image_data_url)  # type: ignore
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
+                    return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
+
+                # Очищаем generation source после успешной генерации, чтобы не переиспользовать случайно
+                await set_user_generation_source_image(user_id, None)
                 bot_reply = "Я сделал :)"
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
@@ -381,14 +435,13 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             bot_reply = (getattr(response, "output_text", None) or "").strip()
             if bot_reply == "":
                 logger.warning(
-                    "Пустой output_text без обработанного tool call. raw_output=%r",
-                    list(response.output or []),
+                    f"Пустой output_text без обработанного tool call. raw_output={list(response.output or [])!r}",
                 )
                 bot_reply = "Произошла ошибка при обработке запроса."
             else:
-                logger.info("Текстовый ответ модели успешно извлечён: %r", bot_reply[:500])
+                logger.info(f"Текстовый ответ модели успешно извлечён: {bot_reply[:500]!r}")
         else:
-            logger.error("Неожиданный тип ответа от get_simple_answer: %s, значение=%r", type(response), response)
+            logger.error(f"Неожиданный тип ответа от get_simple_answer: {type(response)}, значение={response!r}")
             bot_reply = "Произошла ошибка при обработке запроса."
         
         return ModelAnswer(bot_reply,
