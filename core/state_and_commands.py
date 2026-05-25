@@ -1,4 +1,5 @@
 
+import asyncio
 import datetime
 import logging
 import os
@@ -116,6 +117,27 @@ async def reply_text(update: Update, message:str)->None:
 async def reply_service_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message, version=2)
     await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE) # type: ignore
+
+async def reply_service_message(update: Update, message: str):
+    """Отправляет сервисное сообщение и возвращает объект Message."""
+    escaped_text = escape_markdown(message, version=2)
+    return await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)  # type: ignore
+
+
+async def animate_service_message(message, base_text: str, interval: float = 1.5):
+    """Анимация точек в сервисном сообщении."""
+    dots = ["", ".", "..", "..."]
+    i = 0
+    while True:
+        text = f"{base_text}{dots[i % len(dots)]}"
+        escaped_text = escape_markdown(text, version=2)
+        try:
+            await message.edit_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)
+        except Exception:
+            # Игнорируем ошибки редактирования (message not modified, message deleted и т.д.)
+            pass
+        i += 1
+        await asyncio.sleep(interval)
 
 async def send_service_text(user_id:int, message:str):
     escaped_text = escape_markdown(message, version=2)

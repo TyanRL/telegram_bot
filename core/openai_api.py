@@ -17,7 +17,7 @@ from telegram.ext import (
 from openai import OpenAI
 from openai.types.responses import Response
 from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
-from core.state_and_commands import add_location_button, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_text, set_user_generation_source_image, set_user_model
+from core.state_and_commands import add_location_button, animate_service_message, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_message, reply_service_text, set_user_generation_source_image, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 import base64
@@ -389,7 +389,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     bot_reply = "Не удалось начать генерацию видео. Попробуйте позже."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
-                await reply_service_text(update, "Видео генерируется, подождите...")
+                status_message = await reply_service_message(update, "Видео генерируется, подождите")
+                animation_task = asyncio.create_task(
+                    animate_service_message(status_message, "Видео генерируется, подождите", interval=1.5)
+                )
 
                 try:
                     unsigned_urls = await poll_video_generation(polling_url)
@@ -397,12 +400,29 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     video_path = await download_video(video_url)
                 except OpenRouterVideoError as e:
                     logger.error(f"Ошибка при генерации видео: {e}", exc_info=True)
-                    await reply_service_text(update, f"Не удалось сгенерировать видео: {e}")
+                    try:
+                        await status_message.edit_text("_Не удалось сгенерировать видео._", parse_mode="MarkdownV2")
+                    except Exception:
+                        pass
                     return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
                 except Exception as e:
                     logger.error(f"Неожиданная ошибка при генерации видео: {e}", exc_info=True)
-                    await reply_service_text(update, "Произошла ошибка при генерации видео.")
+                    try:
+                        await status_message.edit_text("_Произошла ошибка при генерации видео._", parse_mode="MarkdownV2")
+                    except Exception:
+                        pass
                     return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
+                finally:
+                    animation_task.cancel()
+                    try:
+                        await animation_task
+                    except asyncio.CancelledError:
+                        pass
+
+                try:
+                    await status_message.edit_text("_Видео готово, отправляю..._", parse_mode="MarkdownV2")
+                except Exception:
+                    pass
 
                 try:
                     with open(video_path, "rb") as video_file:
@@ -414,7 +434,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                             await update.message.reply_document(document=InputFile(video_file))  # type: ignore
                     except Exception as e2:
                         logger.error(f"Ошибка при отправке видео как document: {e2}", exc_info=True)
-                        await reply_service_text(update, "Видео сгенерировано, но не удалось отправить его в Telegram.")
+                        try:
+                            await status_message.edit_text("_Видео сгенерировано, но не удалось отправить его в Telegram._", parse_mode="MarkdownV2")
+                        except Exception:
+                            pass
                         return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
                 finally:
                     try:

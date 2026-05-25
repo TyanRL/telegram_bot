@@ -24,7 +24,7 @@ from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_loca
 from utils.sql import get_admins, in_user_list
 from utils.yandex_maps import get_address
 
-version="24.1"
+version="24.5"
 
 
 # URL вебхука
@@ -274,7 +274,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await set_user_image(update.effective_user.id, image_dict)
             await set_user_generation_source_image(update.effective_user.id, image_dict)
 
-        await reply_service_text(update,"Изображение загружено. Можешь задать вопрос по нему или попросить изменить/стилизовать его.")
+        await reply_service_text(update,"Изображение загружено. Можешь задать вопрос по нему, попросить изменить/стилизовать его или сделать видео на основе.")
     except Exception as e:
         await reply_service_text(update,"Ошибка при загрузке изображения")
         logger.error(f"Ошибка в обработчике изображений: {e}")
