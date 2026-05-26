@@ -31,8 +31,6 @@ async def get_all():
     return await user_ids.get_all()
 
 #----------------------------------MySQL------------------------------------------
-if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
-    raise EnvironmentError("Не установлены все необходимые переменные окружения для подключения к MySQL.")
 
 def connect_to_db():
     count = 0
@@ -217,9 +215,11 @@ async def in_user_list(user):
 
 #-------------------------------------end function block-------------------------------------------------------
 
-# Получение списка администраторов из переменной окружения
-get_admins_from_os() 
-# Получение списка пользователей из переменной окружения
-connect_to_db()
-create_tables()
-user_ids=SafeList(get_user_ids())
+def init_db():
+    global user_ids
+    if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
+        raise EnvironmentError("Не установлены все необходимые переменные окружения для подключения к MySQL.")
+    get_admins_from_os()
+    connect_to_db()
+    create_tables()
+    user_ids = SafeList(get_user_ids())

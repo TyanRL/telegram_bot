@@ -20,11 +20,11 @@ from aiohttp import web
 
 from utils.elastic import get_all_user_notes
 from core.openai_api import get_model_answer, transcribe_audio
-from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_generation_source_image, get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_generation_source_image, set_user_image, start
-from utils.sql import get_admins, in_user_list
+from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text,  get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_generation_source_image, set_user_image, start
+from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="24.5"
+version="24.6"
 
 
 # URL вебхука
@@ -304,6 +304,7 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     set_bot_version(version)
+    init_db()
     # Инициализация приложения с увеличенными таймаутами для загрузки изображений
     request = HTTPXRequest(
         connection_pool_size=8,
