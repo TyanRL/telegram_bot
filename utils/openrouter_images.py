@@ -103,10 +103,11 @@ async def generate_image_openrouter(
     )
 
     if not response.is_success:
+        logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
         raise OpenRouterImageError(
-            f"OpenRouter вернул HTTP {response.status_code}: {response_preview}",
+            f"OpenRouter вернул HTTP {response.status_code}: {response.text}",
             status_code=response.status_code,
-            provider_message=response_preview,
+            provider_message=response.text,
         )
 
     try:

@@ -28,7 +28,7 @@ def _get_reason_from_text(text: str, status_code: int | None = None) -> Generati
     if status_code == 429:
         return GenerationFailureReason.RATE_LIMITED
     
-    if any(keyword in text_lower for keyword in ["policy", "safety", "moderation", "content violation", "censored", "nsfw", "rejected", "blocked"]):
+    if any(keyword in text_lower for keyword in ["policy", "safety", "moderation", "request moderated", "content violation", "censored", "nsfw", "rejected", "blocked"]):
         return GenerationFailureReason.CONTENT_POLICY
     
     if any(keyword in text_lower for keyword in ["timeout", "timed out"]):
