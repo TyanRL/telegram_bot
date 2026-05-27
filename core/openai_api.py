@@ -285,7 +285,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 except OpenRouterImageError as e:
                     mapped = map_generation_error(e, context="image")
                     await reply_service_text(update, mapped.user_message)
-                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
+                    return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
                 
                 if image_data_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
@@ -339,7 +339,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 except OpenRouterImageError as e:
                     mapped = map_generation_error(e, context="image")
                     await reply_service_text(update, mapped.user_message)
-                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
+                    return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
                 except Exception as e:
                     logger.error(f"Ошибка при генерации изображения через OpenRouter (img2img): {e}", exc_info=True)
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
@@ -392,7 +392,7 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 except OpenRouterVideoError as e:
                     mapped = map_generation_error(e, context="video")
                     await reply_service_text(update, mapped.user_message)
-                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
+                    return ModelAnswer(None, additional_system_messages, context_tokens, completion_tokens)
                 except Exception as e:
                     logger.error(f"Ошибка при отправке запроса на генерацию видео: {e}", exc_info=True)
                     bot_reply = "Не удалось начать генерацию видео. Попробуйте позже."
