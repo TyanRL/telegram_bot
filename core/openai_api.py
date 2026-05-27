@@ -4,13 +4,14 @@ import json
 import logging
 import os
 from telegram import Update
-from utils.openrouter_images import generate_image_openrouter
+from utils.openrouter_images import generate_image_openrouter, OpenRouterImageError
 from utils.openrouter_videos import (
     download_video,
     poll_video_generation,
     submit_video_generation,
     OpenRouterVideoError,
 )
+from core.generation_error_mapper import map_generation_error
 from telegram.ext import (
     ContextTypes,
 )
@@ -280,13 +281,16 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_image":
-                image_data_url = await generate_image(
-                function_args_dict.get("prompt"),
-                )
-                if image_data_url is None:
-                    logger.warning(
-                    f"Генерация изображения не удалась. prompt={function_args_dict.get('prompt')!r}",
+                try:
+                    image_data_url = await generate_image(
+                    function_args_dict.get("prompt"),
                     )
+                except OpenRouterImageError as e:
+                    mapped = map_generation_error(e, context="image")
+                    await reply_service_text(update, mapped.user_message)
+                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
+                
+                if image_data_url is None:
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
@@ -335,6 +339,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
                         return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
                     image_data_url = image_urls[0]
+                except OpenRouterImageError as e:
+                    mapped = map_generation_error(e, context="image")
+                    await reply_service_text(update, mapped.user_message)
+                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
                 except Exception as e:
                     logger.error(f"Ошибка при генерации изображения через OpenRouter (img2img): {e}", exc_info=True)
                     bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
@@ -384,6 +392,10 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 try:
                     job_id, polling_url = await submit_video_generation(prompt, input_references)
                     logger.info(f"Video job submitted: {job_id}")
+                except OpenRouterVideoError as e:
+                    mapped = map_generation_error(e, context="video")
+                    await reply_service_text(update, mapped.user_message)
+                    return ModelAnswer(mapped.user_message, additional_system_messages, context_tokens, completion_tokens)
                 except Exception as e:
                     logger.error(f"Ошибка при отправке запроса на генерацию видео: {e}", exc_info=True)
                     bot_reply = "Не удалось начать генерацию видео. Попробуйте позже."

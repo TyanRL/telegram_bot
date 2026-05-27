@@ -14,7 +14,10 @@ OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
 
 
 class OpenRouterVideoError(Exception):
-    pass
+    def __init__(self, message: str, status_code: int | None = None, provider_message: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.provider_message = provider_message
 
 
 class OpenRouterVideoConfigError(OpenRouterVideoError):
@@ -68,7 +71,9 @@ async def submit_video_generation(
 
     if not response.is_success:
         raise OpenRouterVideoError(
-            f"OpenRouter вернул HTTP {response.status_code}: {response_preview}"
+            f"OpenRouter вернул HTTP {response.status_code}: {response_preview}",
+            status_code=response.status_code,
+            provider_message=response_preview,
         )
 
     try:
@@ -123,7 +128,9 @@ async def poll_video_generation(
         if not response.is_success:
             response_preview = response.text[:1000]
             raise OpenRouterVideoError(
-                f"OpenRouter вернул HTTP {response.status_code} при опросе: {response_preview}"
+                f"OpenRouter вернул HTTP {response.status_code} при опросе: {response_preview}",
+                status_code=response.status_code,
+                provider_message=response_preview,
             )
 
         try:
