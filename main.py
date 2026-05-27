@@ -5,6 +5,7 @@ import os
 import logging
 import tempfile
 
+from PIL import Image
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -24,7 +25,7 @@ from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_loca
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="25.0"
+version="25.1"
 
 
 # URL вебхука
@@ -273,7 +274,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         img_type, _ = mimetypes.guess_type(photo_path)
         if img_type is None:
             img_type = "application/octet-stream"  # На случай, если тип определить не удалось
-
+        with Image.open(photo_path) as img:
+            width, height = img.size
         # Кодируем изображение в base64 для OpenAI
         with open(photo_path, 'rb') as image_file:
             image_content = image_file.read()
@@ -281,7 +283,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             img_b64_bytes = base64.b64encode(image_content)
             # Преобразование в строку
             img_b64_str = img_b64_bytes.decode("utf-8")
-            image_dict = {"image_type": img_type, "image": img_b64_str}
+            image_dict = {"image_type": img_type, 
+                          "image": img_b64_str, 
+                          "width": width,
+                          "height": height,
+                          "aspect_ratio": width / height,}
             
             # Создаем новую visual session
             from datetime import datetime

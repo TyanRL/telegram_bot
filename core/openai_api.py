@@ -157,21 +157,61 @@ functions=[
 async def request_geolocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_location_button(update, context)
 
-#
-def _prepare_image_for_telegram(b64_data: str, max_size: int = 1280, quality: int = 88) -> BytesIO:
-    """Декодирует base64, ресайзит и конвертирует изображение в JPEG для отправки в Telegram."""
+def _pad_image_to_aspect_ratio(img: Image.Image, target_ratio: float) -> Image.Image:
+    current_ratio = img.width / img.height
+
+    if abs(current_ratio - target_ratio) < 0.01:
+        return img
+
+    if current_ratio > target_ratio:
+        # Результат слишком широкий — добавляем поля сверху/снизу
+        new_w = img.width
+        new_h = round(new_w / target_ratio)
+    else:
+        # Результат слишком высокий — добавляем поля слева/справа
+        new_h = img.height
+        new_w = round(new_h * target_ratio)
+
+    canvas = Image.new("RGB", (new_w, new_h), (255, 255, 255))
+    x = (new_w - img.width) // 2
+    y = (new_h - img.height) // 2
+    canvas.paste(img, (x, y))
+    return canvas
+
+def _prepare_image_for_telegram(
+    b64_data: str,
+    max_size: int = 1280,
+    quality: int = 88,
+    target_aspect_ratio: float | None = None,
+) -> tuple[BytesIO, str, int, int, float]:
+    """Декодирует base64, при необходимости приводит к нужному aspect ratio,
+    ресайзит и конвертирует изображение в JPEG для Telegram.
+    Возвращает BytesIO, обновлённый base64, ширину, высоту и aspect ratio для сохранения в visual session.
+    """
     image_bytes = base64.b64decode(b64_data)
     img = Image.open(BytesIO(image_bytes))
-    # Конвертируем в RGB, чтобы избежать проблем с альфа-каналом при сохранении в JPEG
+
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    # Уменьшаем размер, сохраняя пропорции
+
+    if target_aspect_ratio is not None and target_aspect_ratio > 0:
+        img = _pad_image_to_aspect_ratio(img, target_aspect_ratio)
+
     img.thumbnail((max_size, max_size))
+
+    # Получаем реальные размеры после обработки
+    final_width, final_height = img.size
+    final_aspect_ratio = final_width / final_height if final_height > 0 else 1.0
+
     bio = BytesIO()
     img.save(bio, format="JPEG", quality=quality, optimize=True)
+
+    normalized_b64 = base64.b64encode(bio.getvalue()).decode("utf-8")
+
     bio.seek(0)
     bio.name = "generated.jpg"
-    return bio
+
+    return bio, normalized_b64, final_width, final_height, final_aspect_ratio
 
 async def generate_image(prompt: str | None):
     if prompt is None or prompt == "":
@@ -303,10 +343,11 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 try:
                     if image_data_url.startswith("data:"):
                         header, b64_data = image_data_url.split(",", 1)
-                        bio = _prepare_image_for_telegram(b64_data)
+                        bio, normalized_b64_data, gen_width, gen_height, gen_aspect_ratio = _prepare_image_for_telegram(b64_data)
                         await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
                     else:
                         await update.message.reply_photo(photo=image_data_url)  # type: ignore
+                        gen_width, gen_height, gen_aspect_ratio = None, None, None
                 except Exception as e:
                     logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
@@ -317,7 +358,13 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     if image_data_url.startswith("data:"):
                         header, b64_data = image_data_url.split(",", 1)
                         img_type = header.split(";")[0].replace("data:", "")
-                        new_image_dict = {"image_type": img_type, "image": b64_data}
+                        new_image_dict = {
+                            "image_type": img_type,
+                            "image": normalized_b64_data,
+                            "width": gen_width,
+                            "height": gen_height,
+                            "aspect_ratio": gen_aspect_ratio
+                        }
                         
                         new_session = {
                             "original_image": new_image_dict,
@@ -375,8 +422,23 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     logger.warning("Пустой prompt для generate_image_from_image")
                     bot_reply = "Не удалось сгенерировать изображение: запрос пустой."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+                
+                w = source_image_dict.get("width")
+                h = source_image_dict.get("height")
+
+                if w and h: 
+                    prompt = (
+                            f"{prompt}\n\n"
+                            f"Important: preserve the original image aspect ratio exactly. "
+                            f"The source image is {w}x{h}. Do not make it wider or taller. "
+                            f"Keep the same framing and canvas proportions."
+                            )
                 try:
-                    image_urls = await generate_image_openrouter(prompt=prompt, input_images=[data_url])
+                    aspect_ratio = None
+                    aspect_ratio = source_image_dict.get("aspect_ratio")
+
+                        
+                    image_urls = await generate_image_openrouter(prompt=prompt, input_images=[data_url], aspect_ratio=aspect_ratio)
                     if not image_urls:
                         logger.error("OpenRouter не вернул изображений для img2img")
                         bot_reply = "Не удалось сгенерировать изображение. Внутренняя ошибка сервера"
@@ -394,10 +456,11 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 try:
                     if image_data_url.startswith("data:"):
                         header, b64_data = image_data_url.split(",", 1)
-                        bio = _prepare_image_for_telegram(b64_data)
+                        bio, normalized_b64_data, gen_width, gen_height, gen_aspect_ratio = _prepare_image_for_telegram(b64_data, target_aspect_ratio=aspect_ratio)
                         await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
                     else:
                         await update.message.reply_photo(photo=image_data_url)  # type: ignore
+                        gen_width, gen_height, gen_aspect_ratio = None, None, None
                 except Exception as e:
                     logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
@@ -409,7 +472,14 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                         header, b64_data = image_data_url.split(",", 1)
                         # Извлекаем MIME-тип из header
                         img_type = header.split(";")[0].replace("data:", "")
-                        new_image_dict = {"image_type": img_type, "image": b64_data}
+                        new_image_dict = {
+                            "image_type": img_type,
+                            "image": normalized_b64_data,
+                            "width": gen_width,
+                            "height": gen_height,
+                            "aspect_ratio": gen_aspect_ratio
+                        }
+
                     else:
                         # Если это URL, не можем сохранить как base64, оставляем как есть
                         # В будущем можно скачать и конвертировать
