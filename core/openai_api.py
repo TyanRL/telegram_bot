@@ -18,7 +18,7 @@ from telegram.ext import (
 from openai import OpenAI
 from openai.types.responses import Response
 from utils.elastic import add_note, get_all_user_notes, get_notes_by_query, remove_notes
-from core.state_and_commands import add_location_button, animate_service_message, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_model, get_voice_recognition_model, reply_service_message, reply_service_text, set_user_generation_source_image, set_user_model
+from core.state_and_commands import add_location_button, animate_service_message, get_OpenAI_Models, get_notes_text, get_user_generation_source_image, get_user_image_edit_session, get_user_model, get_voice_recognition_model, reply_service_message, reply_service_text, set_user_generation_source_image, set_user_image_edit_session, set_user_model
 from utils.weather import  get_weather_description2, get_weekly_forecast
 from utils.yandex_maps import get_location_by_address
 import base64
@@ -105,7 +105,7 @@ functions=[
     {
         "type": "function",
         "name": "generate_image",
-        "description": "Сгенерировать изображение только по текстовому описанию пользователя. Используй, когда пользователь просит нарисовать что-то с нуля без опоры на ранее присланное изображение.",
+        "description": "Сгенерировать изображение только по текстовому описанию пользователя (с нуля). Используй ТОЛЬКО когда у пользователя НЕТ активной сессии редактирования изображения. Если сессия уже есть, сообщи пользователю, что нужно сначала выполнить /reset.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -120,13 +120,13 @@ functions=[
     {
         "type": "function",
         "name": "generate_image_from_image",
-        "description": "Сгенерировать или преобразовать изображение на основе последней картинки, отправленной пользователем, с учетом текстовой инструкции. Используй, когда пользователь просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию на основе ранее присланного изображения.",
+        "description": "Сгенерировать или преобразовать изображение на основе ТЕКУЩЕЙ картинки из активной сессии редактирования с учетом текстовой инструкции. Используй, когда пользователь просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию. Текущая картинка берётся из сессии автоматически — повторная загрузка изображения не требуется. После успешной генерации текущая картинка обновляется результатом.",
         "parameters": {
             "type": "object",
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Инструкция, как преобразовать изображение пользователя"
+                    "description": "Инструкция, как преобразовать текущее изображение"
                 },
             },
             "required": ["prompt"]
@@ -135,7 +135,7 @@ functions=[
     {
         "type": "function",
         "name": "generate_video",
-        "description": "Сгенерировать видео или анимацию по текстовому описанию пользователя. Если у пользователя есть сохранённое изображение, используй его как основу для видео. Используй, когда пользователь просит видео, анимацию, оживить картинку или сделать видео на основе изображения.",
+        "description": "Сгенерировать видео или анимацию по текстовому описанию пользователя. Если есть активная сессия редактирования, используй текущую картинку сессии как основу для видео. Генерация видео НЕ изменяет текущую картинку — после видео можно продолжать редактировать ту же картинку. Используй, когда пользователь просит видео, анимацию, оживить картинку или сделать видео на основе изображения.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -278,6 +278,15 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     return ModelAnswer("Произошла ошибка при обработке запроса.", additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_image":
+                user_id = update.effective_user.id
+                
+                # Проверяем наличие активной visual session
+                session = await get_user_image_edit_session(user_id)
+                if session is not None:
+                    # Если session уже есть, не создаём новую основу поверх активной session
+                    bot_reply = "У вас уже есть активная сессия редактирования изображения. Чтобы сгенерировать новое изображение с нуля, сначала выполните /reset."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+                
                 try:
                     image_data_url = await generate_image(
                     function_args_dict.get("prompt"),
@@ -302,17 +311,54 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
 
-                bot_reply = "Я сделал :)"
+                # Создаём новую visual session из сгенерированного изображения
+                try:
+                    from datetime import datetime
+                    if image_data_url.startswith("data:"):
+                        header, b64_data = image_data_url.split(",", 1)
+                        img_type = header.split(";")[0].replace("data:", "")
+                        new_image_dict = {"image_type": img_type, "image": b64_data}
+                        
+                        new_session = {
+                            "original_image": new_image_dict,
+                            "current_image": new_image_dict,
+                            "source_kind": "generated",
+                            "history": [
+                                {
+                                    "step": 0,
+                                    "kind": "text2image",
+                                    "prompt": function_args_dict.get("prompt"),
+                                    "created_at": datetime.now().isoformat()
+                                }
+                            ]
+                        }
+                        await set_user_image_edit_session(user_id, new_session)
+                        
+                        # Для обратной совместимости
+                        await set_user_generation_source_image(user_id, new_image_dict)
+                except Exception as e:
+                    logger.error(f"Ошибка при создании visual session после generate_image: {e}", exc_info=True)
+
+                bot_reply = "Я сделал :) Изображение сгенерировано и стало текущей основой для редактирования."
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_image_from_image":
                 user_id = update.effective_user.id
-                source_image_dict = await get_user_generation_source_image(user_id)
-                if source_image_dict is None:
+                
+                # Получаем visual session
+                session = await get_user_image_edit_session(user_id)
+                if session is None:
                     logger.warning(
-                        f"generate_image_from_image вызван, но у пользователя {user_id} нет сохраненного изображения",
+                        f"generate_image_from_image вызван, но у пользователя {user_id} нет активной visual session",
                     )
                     bot_reply = "Сначала отправьте изображение, которое будет использоваться как основа для генерации."
+                    return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+
+                # Берем current_image из session
+                source_image_dict = session.get("current_image")
+                if source_image_dict is None:
+                    logger.error(f"Visual session существует, но current_image отсутствует для пользователя {user_id}")
+                    bot_reply = "Ошибка: в сессии отсутствует текущее изображение."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
                 try:
@@ -356,9 +402,41 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     logger.error(f"Ошибка при отправке картинки в Telegram: {e}", exc_info=True)
                     return ModelAnswer("Картинка сгенерировалась, но не удалось отправить её в Telegram.")
 
-                # Очищаем generation source после успешной генерации, чтобы не переиспользовать случайно
-                await set_user_generation_source_image(user_id, None)
-                bot_reply = "Я сделал :)"
+                # Обновляем session.current_image новым результатом
+                try:
+                    from datetime import datetime
+                    if image_data_url.startswith("data:"):
+                        header, b64_data = image_data_url.split(",", 1)
+                        # Извлекаем MIME-тип из header
+                        img_type = header.split(";")[0].replace("data:", "")
+                        new_image_dict = {"image_type": img_type, "image": b64_data}
+                    else:
+                        # Если это URL, не можем сохранить как base64, оставляем как есть
+                        # В будущем можно скачать и конвертировать
+                        new_image_dict = source_image_dict  # Не обновляем, если не можем получить base64
+                    
+                    # Обновляем current_image
+                    session["current_image"] = new_image_dict
+                    
+                    # Добавляем запись в history
+                    history = session.get("history", [])
+                    history.append({
+                        "step": len(history),
+                        "kind": "edit",
+                        "prompt": prompt,
+                        "created_at": datetime.now().isoformat()
+                    })
+                    session["history"] = history
+                    
+                    # Сохраняем обновленную session
+                    await set_user_image_edit_session(user_id, session)
+                    
+                    # Для обратной совместимости обновляем старые состояния
+                    await set_user_generation_source_image(user_id, new_image_dict)
+                except Exception as e:
+                    logger.error(f"Ошибка при обновлении visual session: {e}", exc_info=True)
+                
+                bot_reply = "Я сделал :) Можете отправлять следующую инструкцию для редактирования без повторной загрузки картинки."
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "generate_video":
@@ -369,22 +447,24 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     bot_reply = "Не удалось сгенерировать видео: запрос пустой."
                     return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
-                # Проверяем наличие сохранённого изображения для использования как основы
-                source_image_dict = await get_user_generation_source_image(user_id)
+                # Проверяем наличие visual session для использования current_image как основы
+                session = await get_user_image_edit_session(user_id)
                 input_references = None
-                if source_image_dict is not None:
-                    try:
-                        img_type = source_image_dict["image_type"]
-                        img_b64_str = source_image_dict["image"]
-                        data_url = f"data:{img_type};base64,{img_b64_str}"
-                        input_references = [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": data_url},
-                            }
-                        ]
-                    except Exception as e:
-                        logger.error(f"Ошибка при сборке data URL для видео: {e}", exc_info=True)
+                if session is not None:
+                    source_image_dict = session.get("current_image")
+                    if source_image_dict is not None:
+                        try:
+                            img_type = source_image_dict["image_type"]
+                            img_b64_str = source_image_dict["image"]
+                            data_url = f"data:{img_type};base64,{img_b64_str}"
+                            input_references = [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": data_url},
+                                }
+                            ]
+                        except Exception as e:
+                            logger.error(f"Ошибка при сборке data URL для видео: {e}", exc_info=True)
 
                 try:
                     job_id, polling_url = await submit_video_generation(prompt, input_references)
@@ -454,9 +534,24 @@ async def get_model_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                     except Exception:
                         pass
 
-                # Очищаем generation source после успешной генерации
-                await set_user_generation_source_image(user_id, None)
-                bot_reply = "Я сделал :)"
+                # Добавляем запись в history visual session, но не очищаем session и не изменяем current_image
+                try:
+                    from datetime import datetime
+                    session = await get_user_image_edit_session(user_id)
+                    if session is not None:
+                        history = session.get("history", [])
+                        history.append({
+                            "step": len(history),
+                            "kind": "video",
+                            "prompt": prompt,
+                            "created_at": datetime.now().isoformat()
+                        })
+                        session["history"] = history
+                        await set_user_image_edit_session(user_id, session)
+                except Exception as e:
+                    logger.error(f"Ошибка при обновлении history visual session после видео: {e}", exc_info=True)
+                
+                bot_reply = "Я сделал :) Видео создано на основе текущей версии изображения. Текущая картинка для дальнейших правок сохранена."
                 return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
 
             if function_call_name == "change_model":

@@ -20,11 +20,11 @@ from aiohttp import web
 
 from utils.elastic import get_all_user_notes
 from core.openai_api import get_model_answer, transcribe_audio
-from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text,  get_user_image, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_generation_source_image, set_user_image, start
+from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image_edit_session, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_generation_source_image, set_user_image_edit_session, start
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="24.9"
+version="25.0"
 
 
 # URL вебхука
@@ -40,10 +40,11 @@ def get_system_message():
         "content":
 f"""
 Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
-1. Если пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
-2. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию на основе ранее присланного изображения, используй функцию generate_image_from_image.
-3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения или без него, используй функцию generate_video.
+1. Если по доступному в диалоге контексту видно, что пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
+2. Если по доступному в диалоге контексту видно, что у пользователя есть текущая картинка для редактирования и он просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию, используй функцию generate_image_from_image.
+3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения — используй функцию generate_video.
 4. Промпты для генерации видео и изображений создавай на английском языке, если результат генерации требует наличие текста, то этот текст не обязательно должен быть на английском.
+5. Если функция недоступна для текущего состояния сессии, не придумывай обходной путь и следуй ограничениям, которые вернет приложение.
 """,
     }
     return system_message
@@ -61,14 +62,18 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         user=update.effective_user
         if user is None:
             return None,None
-        imgage_dict = await get_user_image(user.id)
+        
+        # Проверяем наличие активной visual session
+        session = await get_user_image_edit_session(user.id)
+        
         # Получение истории сообщений пользователя
-        if imgage_dict is not None:
+        if session is not None and session.get("current_image") is not None:
             try:
-                # Итоговая строка для использования
-                img_type=imgage_dict["image_type"] # type: ignore
-                img_b64_str = imgage_dict["image"] # type: ignore
-                history = await user_histories.get(user.id, []) # type: ignore
+                # Берем current_image из visual session
+                image_dict = session["current_image"]
+                img_type = image_dict["image_type"]
+                img_b64_str = image_dict["image"]
+                history = await user_histories.get(user.id, [])
                 history.append({
                     "role": "user",
                     "content": [
@@ -77,10 +82,8 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                     ],
                 })
             except Exception as e:
-                logger.error(f"Ошибка при при обработке вашего запроса c изображением: {e}")
+                logger.error(f"Ошибка при обработке вашего запроса c изображением: {e}")
                 return "Извините, произошла ошибка при обработке вашего запроса c изображением.", None
-            finally:
-                await set_user_image(user.id, None)
         else:
             # Получаем или создаем историю сообщений для пользователя
             history = await get_history(user.id, user_message)
@@ -254,6 +257,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         if update.effective_user is None:
             return
+        
+        # Проверяем наличие активной visual session
+        existing_session = await get_user_image_edit_session(update.effective_user.id)
+        if existing_session is not None:
+            await reply_service_text(update,"У вас уже есть активная сессия редактирования изображения. Чтобы начать работу с новой картинкой, выполните /reset.")
+            return
+        
         # Получаем файл изображения
         photo_file = await update.message.photo[-1].get_file()
         photo_path = f'user_{update.effective_user.id}_image.jpg'
@@ -272,10 +282,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Преобразование в строку
             img_b64_str = img_b64_bytes.decode("utf-8")
             image_dict = {"image_type": img_type, "image": img_b64_str}
-            await set_user_image(update.effective_user.id, image_dict)
+            
+            # Создаем новую visual session
+            from datetime import datetime
+            session = {
+                "original_image": image_dict,
+                "current_image": image_dict,
+                "source_kind": "uploaded",
+                "history": [
+                    {
+                        "step": 0,
+                        "kind": "upload",
+                        "prompt": None,
+                        "created_at": datetime.now().isoformat()
+                    }
+                ]
+            }
+            await set_user_image_edit_session(update.effective_user.id, session)
+            
+            # Для обратной совместимости сохраняем в старые состояния
             await set_user_generation_source_image(update.effective_user.id, image_dict)
 
-        await reply_service_text(update,"Изображение загружено. Можешь задать вопрос по нему, попросить изменить/стилизовать его или сделать видео на основе.")
+        await reply_service_text(update,"Изображение загружено и стало текущей основой для редактирования. Можешь задать вопрос по нему, попросить изменить/стилизовать его или сделать видео на основе. Для последовательных правок не нужно повторно отправлять картинку.")
     except Exception as e:
         await reply_service_text(update,"Ошибка при загрузке изображения")
         logger.error(f"Ошибка в обработчике изображений: {e}")
