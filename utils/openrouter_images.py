@@ -118,6 +118,18 @@ async def generate_image_openrouter(
             f"(status={response.status_code}, content_type={content_type}, body={response_preview!r})"
         ) from e
 
+    # Проверяем наличие ошибки в JSON даже при HTTP 200
+    error_data = data.get("error")
+    if error_data:
+        error_message = error_data.get("message", "Неизвестная ошибка провайдера")
+        error_code = error_data.get("code")
+        logger.error(f"OpenRouter вернул ошибку в JSON: {error_data}")
+        raise OpenRouterImageError(
+            f"OpenRouter вернул ошибку: {error_message}",
+            status_code=error_code if isinstance(error_code, int) else None,
+            provider_message=error_message,
+        )
+
     choices = data.get("choices")
     if not choices:
         raise OpenRouterImageError(f"Ответ OpenRouter не содержит choices: {data!r}")

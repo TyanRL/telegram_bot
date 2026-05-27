@@ -174,18 +174,15 @@ def _prepare_image_for_telegram(b64_data: str, max_size: int = 1280, quality: in
     return bio
 
 async def generate_image(prompt: str | None):
-    try:
-        if prompt is None or prompt == "":
-            logger.info("Пустой запрос на генерацию изображения")
-            return None
-        image_urls = await generate_image_openrouter(prompt=prompt)
-        if not image_urls:
-            logger.error("OpenRouter не вернул изображений")
-            return None
-        return image_urls[0]
-    except Exception as e:
-        logger.error("Ошибка при генерации изображения через OpenRouter: " + str(e), exc_info=True)
+    if prompt is None or prompt == "":
+        logger.info("Пустой запрос на генерацию изображения")
         return None
+    # Пробрасываем OpenRouterImageError для корректной обработки в вызывающем коде
+    image_urls = await generate_image_openrouter(prompt=prompt)
+    if not image_urls:
+        logger.error("OpenRouter не вернул изображений")
+        return None
+    return image_urls[0]
 
 def transcribe_audio(audio_filename):
     try:

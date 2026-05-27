@@ -28,17 +28,28 @@ def _get_reason_from_text(text: str, status_code: int | None = None) -> Generati
     if status_code == 429:
         return GenerationFailureReason.RATE_LIMITED
     
-    if any(keyword in text_lower for keyword in ["policy", "safety", "moderation", "request moderated", "content violation", "censored", "nsfw", "rejected", "blocked"]):
+    # Расширенный список ключевых слов для content policy
+    content_policy_keywords = [
+        "policy", "safety", "moderation", "request moderated", "content violation",
+        "censored", "nsfw", "rejected", "blocked", "provider returned error",
+        "denied", "flagged", "sexual", "explicit", "inappropriate", "offensive",
+        "adult content", "nudity", "violence"
+    ]
+    if any(keyword in text_lower for keyword in content_policy_keywords):
         return GenerationFailureReason.CONTENT_POLICY
     
     if any(keyword in text_lower for keyword in ["timeout", "timed out"]):
         return GenerationFailureReason.GENERATION_TIMEOUT
         
-    if any(keyword in text_lower for keyword in ["too complex", "invalid prompt"]):
+    if any(keyword in text_lower for keyword in ["too complex", "invalid prompt", "unsupported"]):
         return GenerationFailureReason.PROMPT_TOO_COMPLEX
         
     if status_code and 500 <= status_code < 600:
         return GenerationFailureReason.TEMPORARY_PROVIDER_ERROR
+    
+    # Если status_code 400 и есть provider_message, скорее всего это content policy
+    if status_code == 400:
+        return GenerationFailureReason.CONTENT_POLICY
         
     return GenerationFailureReason.UNKNOWN_ERROR
 
