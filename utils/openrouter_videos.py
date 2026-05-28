@@ -28,7 +28,7 @@ async def submit_video_generation(
     prompt: str,
     input_references: Optional[List[Dict[str, Any]]] = None,
     model: Optional[str] = None,
-    resolution: str = "480p",
+    resolution: str = "720p",
 ) -> tuple[str, str]:
     """Отправляет запрос на генерацию видео в OpenRouter.
 
