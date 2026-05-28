@@ -9,7 +9,7 @@ from utils.openrouter_images import _get_headers
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video"
+DEFAULT_VIDEO_MODEL = "google/veo-3.1-fast"
 OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
 
 
