@@ -87,13 +87,13 @@ async def send_video_to_telegram(update: Update, video_path: str, status_message
     """Отправляет видео в Telegram, пробуя video, затем document. Возвращает True при успехе."""
     try:
         with open(video_path, "rb") as video_file:
-            await update.message.reply_video(video=InputFile(video_file))  # type: ignore
+            await update.message.reply_video(video=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке видео как video: {e}", exc_info=True)
         try:
             with open(video_path, "rb") as video_file:
-                await update.message.reply_document(document=InputFile(video_file))  # type: ignore
+                await update.message.reply_document(document=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
             return True
         except Exception as e2:
             logger.error(f"Ошибка при отправке видео как document: {e2}", exc_info=True)

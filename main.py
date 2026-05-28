@@ -25,7 +25,7 @@ from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_loca
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="26.0"
+version="26.1"
 
 
 # URL вебхука
@@ -342,10 +342,10 @@ async def main():
     # Инициализация приложения с увеличенными таймаутами для загрузки изображений
     request = HTTPXRequest(
         connection_pool_size=8,
-        read_timeout=30,
-        write_timeout=60,
-        connect_timeout=10,
-        pool_timeout=10,
+        read_timeout=120,
+        write_timeout=180,
+        connect_timeout=30,
+        pool_timeout=30,
     )
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).request(request).build()
 
