@@ -13,6 +13,7 @@ class GenerationFailureReason(str, Enum):
     RATE_LIMITED = "rate_limited"
     TEMPORARY_PROVIDER_ERROR = "temporary_provider_error"
     DELIVERY_ERROR = "delivery_error"
+    INCORRECT_RESOLUTION = "resolution_error"
     INTERNAL_ERROR = "internal_error"
     UNKNOWN_ERROR = "unknown_error"
 
@@ -43,6 +44,9 @@ def _get_reason_from_text(text: str, status_code: int | None = None) -> Generati
         
     if any(keyword in text_lower for keyword in ["too complex", "invalid prompt", "unsupported"]):
         return GenerationFailureReason.PROMPT_TOO_COMPLEX
+    
+    if any(keyword in text_lower for keyword in ["resolution"]):
+            return GenerationFailureReason.INCORRECT_RESOLUTION
         
     if status_code and 500 <= status_code < 600:
         return GenerationFailureReason.TEMPORARY_PROVIDER_ERROR
@@ -76,5 +80,7 @@ def map_generation_error(exc: Exception, context: str = "image") -> UserFacingGe
         user_message = "Не удалось сгенерировать результат по текущему описанию. Попробуйте сделать запрос короче и проще."
     elif reason == GenerationFailureReason.TEMPORARY_PROVIDER_ERROR:
         user_message = "Сервис генерации временно недоступен. Попробуйте позже."
+    elif reason == GenerationFailureReason.INCORRECT_RESOLUTION:
+        user_message = "Произошла внутренняя ошибка при генерации. Неверно задано разрешение. Обратитесь к администратору."
         
     return UserFacingGenerationError(reason=reason, user_message=user_message)
