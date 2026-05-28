@@ -95,7 +95,7 @@ async def submit_video_generation(
 
 async def poll_video_generation(
     polling_url: str,
-    timeout: int = 90,
+    timeout: int = 180,
     interval: int = 5,
 ) -> List[str]:
     """Опрашивает статус генерации видео.

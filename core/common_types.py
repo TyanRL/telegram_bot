@@ -1,5 +1,15 @@
 
+from dataclasses import dataclass, field
 import asyncio
+
+
+@dataclass
+class ModelAnswer:
+    bot_reply: str | None = None
+    additional_system_messages: list[dict] = field(default_factory=list)
+    ctx_token: int = 0
+    completion_token: int = 0
+    recurse: bool = False
 
 
 class SafeDict:
@@ -21,9 +31,9 @@ class SafeDict:
                 del self.data[key]
 
 class SafeList:
-    def __init__(self, l: list):
+    def __init__(self, list: list):
         self.lock = asyncio.Lock()
-        self.data = l
+        self.data = list
 
     async def append(self, value):
         async with self.lock:
