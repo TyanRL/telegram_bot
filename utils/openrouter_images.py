@@ -6,9 +6,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-image_model_name = "black-forest-labs/flux.2-max"
+generation_image_model_name = "black-forest-labs/flux.2-max"
+edit_image_model_name = "google/gemini-3.1-flash-image-preview"
 openrouter_base_url = "https://openrouter.ai/api/v1/chat/completions"
 
+model_to_modalities:dict[str,list[str]] = {
+    generation_image_model_name: ["image"],
+    edit_image_model_name:["image","text"],
+    "default": ["image"]
+}
 
 class OpenRouterImageError(Exception):
     def __init__(self, message: str, status_code: int | None = None, provider_message: str | None = None):
@@ -53,7 +59,7 @@ def _validate_data_image_url(url: str) -> None:
 async def generate_image_openrouter(
     prompt: str,
     input_images: Optional[List[str]] = None,
-    model: Optional[str] = None,
+    model_name: Optional[str] = None,
     **kwargs: Any,
 ) -> List[str]:
     if not prompt:
@@ -61,7 +67,19 @@ async def generate_image_openrouter(
         return []
 
     headers = _get_headers()
-    model = model or image_model_name
+    
+    modalities=model_to_modalities["default"]
+    if not model_name:
+        model = generation_image_model_name
+        if input_images and len(input_images)>0:
+            model = edit_image_model_name
+    else: 
+        model= model_name
+    
+    
+    if model in model_to_modalities:
+        modalities=model_to_modalities[model]
+    
 
     messages = kwargs.pop("messages", None)
     if messages is None:
@@ -76,7 +94,7 @@ async def generate_image_openrouter(
     payload: Dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "modalities": ["image"],   # для Flux это правильно
+        "modalities": modalities,   # для Flux это правильно
     }
     payload.update(kwargs)
 
