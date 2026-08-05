@@ -6,7 +6,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-generation_image_model_name = "black-forest-labs/flux.2-max"
+generation_image_model_name = "qwen/qwen-image-3-pro"
 edit_image_model_name = "google/gemini-3.1-flash-image-preview"
 openrouter_base_url = "https://openrouter.ai/api/v1/chat/completions"
 
