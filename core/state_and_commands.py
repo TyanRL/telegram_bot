@@ -33,7 +33,6 @@ TELEGRAM_BOT_TOKEN=tg_bot_candidate
 user_histories = SafeDict()
 translate_mode=SafeDict()
 
-user_generation_source_image = SafeDict()
 user_model = SafeDict()
 user_visual_session = SafeDict()
 
@@ -61,11 +60,6 @@ async def get_user_model(user_id:int)->str:
     else:
         return model
 
-
-async def set_user_generation_source_image(user_id:int, image:dict|None)->None:
-    await user_generation_source_image.set(user_id,image)
-async def get_user_generation_source_image(user_id:int)->dict|None:
-    return await user_generation_source_image.get(user_id, None)
 
 async def set_user_image_edit_session(user_id:int, session:dict|None)->None:
     """Устанавливает visual session для пользователя."""
@@ -158,7 +152,6 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     await user_histories.set(user.id, []) # type: ignore
     await user_model.set(user.id, None) # type: ignore
-    await user_generation_source_image.set(user.id, None) # type: ignore
     await clear_user_image_edit_session(user.id) # type: ignore
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logger.info(f"Context for user {user.id} is reset") # type: ignore

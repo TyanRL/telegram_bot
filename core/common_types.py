@@ -1,6 +1,109 @@
 
-from dataclasses import dataclass, field
 import asyncio
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedImage:
+    """Бинарный результат генерации изображения.
+
+    Внутри приложения изображение передаётся как bytes. Кодирование в base64
+    выполняется только при сохранении visual session.
+    """
+
+    content: bytes
+    mime_type: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.content, bytes):
+            raise TypeError("GeneratedImage.content должен иметь тип bytes")
+        if not self.mime_type or "/" not in self.mime_type:
+            raise ValueError("GeneratedImage.mime_type должен быть MIME-типом")
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+@dataclass(slots=True)
+class GeneratedVideo:
+    """Готовый видеофайл, которым владеет вызывающий код."""
+
+    path: Path
+    cleanup_on_exit: bool = True
+    _cleaned: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.path = Path(self.path)
+
+    @property
+    def file_path(self) -> Path:
+        """Явное имя пути для кода доставки."""
+
+        return self.path
+
+    @property
+    def cleaned(self) -> bool:
+        return self._cleaned
+
+    def cleanup(self) -> None:
+        """Удаляет временный файл не более одного раза."""
+
+        if self._cleaned:
+            return
+        try:
+            if self.cleanup_on_exit:
+                self.path.unlink(missing_ok=True)
+        finally:
+            self._cleaned = True
+
+    close = cleanup
+
+
+@dataclass(frozen=True, slots=True)
+class ImageGenerationOptions:
+    """Параметры операции text-to-image."""
+
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    output_format: str | None = None
+    output_compression: int | None = None
+    quality: str | None = None
+    background: str | None = None
+    size: str | None = None
+    seed: int | None = None
+    n: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class ImageEditOptions:
+    """Параметры операции редактирования изображения."""
+
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    output_format: str = "png"
+    output_compression: int | None = None
+    quality: str | None = None
+    background: str | None = None
+    size: str | None = None
+    seed: int | None = None
+    n: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class VideoGenerationOptions:
+    """Параметры запуска и ожидания генерации видео."""
+
+    model: str = "google/veo-3.1-fast"
+    resolution: str = "720p"
+    aspect_ratio: str | None = None
+    duration: int | None = None
+    generate_audio: bool | None = None
+    seed: int | None = None
+    size: str | None = None
+    timeout_seconds: float = 180.0
+    polling_interval_seconds: float = 5.0
+    index: int = 0
 
 
 @dataclass

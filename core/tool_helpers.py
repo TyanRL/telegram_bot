@@ -1,11 +1,13 @@
 import base64
+import binascii
 import logging
-import os
 from io import BytesIO
 from typing import Any
 
 from PIL import Image
 from telegram import InputFile, Update
+
+from core.common_types import GeneratedImage, GeneratedVideo
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +33,18 @@ def _pad_image_to_aspect_ratio(img: Image.Image, target_ratio: float) -> Image.I
 
 
 def prepare_image_for_telegram(
-    b64_data: str,
+    image: GeneratedImage,
     max_size: int = 1280,
     quality: int = 88,
     target_aspect_ratio: float | None = None,
 ) -> tuple[BytesIO, str, int, int, float]:
-    """Декодирует base64, при необходимости приводит к нужному aspect ratio,
+    """Подготавливает бинарное изображение для Telegram.
+
+    При необходимости приводит его к нужному aspect ratio,
     ресайзит и конвертирует изображение в JPEG для Telegram.
     Возвращает BytesIO, обновлённый base64, ширину, высоту и aspect ratio для сохранения в visual session.
     """
-    image_bytes = base64.b64decode(b64_data)
-    img = Image.open(BytesIO(image_bytes))
+    img = Image.open(BytesIO(image.content))
 
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
@@ -67,32 +70,32 @@ def prepare_image_for_telegram(
 
 async def send_image_to_telegram(
     update: Update,
-    image_data_url: str,
+    image: GeneratedImage,
     target_aspect_ratio: float | None = None,
 ) -> tuple[str | None, int | None, int | None, float | None]:
-    """Отправляет изображение в Telegram. Возвращает normalized_b64, width, height, aspect_ratio."""
-    if image_data_url.startswith("data:"):
-        header, b64_data = image_data_url.split(",", 1)
-        bio, normalized_b64_data, gen_width, gen_height, gen_aspect_ratio = prepare_image_for_telegram(
-            b64_data, target_aspect_ratio=target_aspect_ratio
-        )
-        await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
-        return normalized_b64_data, gen_width, gen_height, gen_aspect_ratio
-    else:
-        await update.message.reply_photo(photo=image_data_url)  # type: ignore
-        return None, None, None, None
+    """Отправляет бинарный результат в Telegram.
+
+    Возвращает base64 только для последующего сохранения в visual session.
+    """
+    bio, normalized_b64_data, gen_width, gen_height, gen_aspect_ratio = (
+        prepare_image_for_telegram(image, target_aspect_ratio=target_aspect_ratio)
+    )
+    await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
+    return normalized_b64_data, gen_width, gen_height, gen_aspect_ratio
 
 
-async def send_video_to_telegram(update: Update, video_path: str, status_message: Any) -> bool:
+async def send_video_to_telegram(
+    update: Update, video: GeneratedVideo, status_message: Any
+) -> bool:
     """Отправляет видео в Telegram, пробуя video, затем document. Возвращает True при успехе."""
     try:
-        with open(video_path, "rb") as video_file:
+        with video.path.open("rb") as video_file:
             await update.message.reply_video(video=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке видео как video: {e}", exc_info=True)
         try:
-            with open(video_path, "rb") as video_file:
+            with video.path.open("rb") as video_file:
                 await update.message.reply_document(document=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
             return True
         except Exception as e2:
@@ -106,25 +109,56 @@ async def send_video_to_telegram(update: Update, video_path: str, status_message
                 pass
             return False
     finally:
-        try:
-            os.remove(video_path)
-        except Exception:
-            pass
+        video.cleanup()
 
 
-def build_image_dict_from_data_url(image_data_url: str, normalized_b64: str | None, width: int | None, height: int | None, aspect_ratio: float | None) -> dict:
-    """Создаёт словарь с данными изображения из data URL."""
-    if image_data_url.startswith("data:") and normalized_b64 is not None and width is not None and height is not None and aspect_ratio is not None:
-        header, _ = image_data_url.split(",", 1)
-        img_type = header.split(";")[0].replace("data:", "")
+def build_image_dict_from_image(
+    image: GeneratedImage,
+    normalized_b64: str | None,
+    width: int | None,
+    height: int | None,
+    aspect_ratio: float | None,
+) -> dict:
+    """Создаёт данные visual session из бинарного изображения.
+
+    `normalized_b64` появляется только на границе хранения и уже содержит
+    JPEG-версию, отправленную в Telegram.
+    """
+    if normalized_b64 is not None and width is not None and height is not None and aspect_ratio is not None:
         return {
-            "image_type": img_type,
+            "image_type": "image/jpeg",
             "image": normalized_b64,
             "width": width,
             "height": height,
             "aspect_ratio": aspect_ratio,
+            "source_mime_type": image.mime_type,
         }
     return {}
+
+
+def generated_image_from_session_dict(image_dict: dict[str, Any]) -> GeneratedImage:
+    """Восстанавливает бинарное изображение на границе visual session."""
+    image_type = image_dict.get("image_type")
+    encoded = image_dict.get("image")
+    if not isinstance(image_type, str) or not image_type:
+        raise ValueError("В visual session отсутствует MIME-тип изображения")
+    if not isinstance(encoded, str) or not encoded:
+        raise ValueError("В visual session отсутствует изображение")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("В visual session содержится некорректное изображение") from exc
+    if not content:
+        raise ValueError("В visual session содержится пустое изображение")
+    return GeneratedImage(
+        content=content,
+        mime_type=image_type,
+        metadata={
+            "width": image_dict.get("width"),
+            "height": image_dict.get("height"),
+            "aspect_ratio": image_dict.get("aspect_ratio"),
+        },
+    )
 
 
 def add_history_entry(session: dict, kind: str, prompt: str | None = None) -> None:

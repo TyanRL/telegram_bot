@@ -84,9 +84,11 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/99/d5/3c97526c8796d3caf5f4b3bed2b05e8a7102326f00a334e7a438237f3b22/google_auth_httplib2-0.3.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c4/ab/09169d5a4612a5f92490806649ac8d41e3ec9129c636754575b3553f4ea4/googleapis_common_protos-1.72.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2f/90/fd509079dfcab01102c0fdd87f3a9506894bc70afcf9e9785ef6b2b3aff6/httplib2-0.31.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/55/8a/1270a6803bd821cbfcdda387eaa13cb41a7b1f7b9bd145979b3bfb9d6cb7/jsonpath_python-1.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/0f/b5e545f0c7962be90366af3418989b12cf441d9da1e5d89d88f2f3e5cf8f/mistletoe-1.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/42/07/069983799cf4050c68f61a494f94b06f095fee6026ab0dd863a14de30867/mysql_connector_python-9.6.0-cp313-cp313-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/5a/13/25fadab5b522244b42f4bc78ba4cf781dae986e983aa408154cd3ba0df9c/openrouter-1.1.29-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/67/ee/21d4e8536afd1a328f01b359b4d3997b291ffd35a237c877b331c1c3b71c/pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/5d/79/ac273cbbf744691821a9cca88957257f41afe271637794975ca090b9588b/proto_plus-1.27.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9b/53/a9443aa3ca9ba8724fdfa02dd1887c1bcd8e89556b715cfbacca6b63dbec/protobuf-6.33.5-cp39-abi3-manylinux2014_x86_64.whl
@@ -623,6 +625,17 @@ packages:
   - pkg:pypi/jiter?source=hash-mapping
   size: 307925
   timestamp: 1770047934409
+- pypi: https://files.pythonhosted.org/packages/55/8a/1270a6803bd821cbfcdda387eaa13cb41a7b1f7b9bd145979b3bfb9d6cb7/jsonpath_python-1.1.6-py3-none-any.whl
+  name: jsonpath-python
+  version: 1.1.6
+  sha256: a1c50afd8d3fbbaf47a4873bc890dcb3c15da96f5c020327977d844d8731a2d4
+  requires_dist:
+  - poethepoet ; extra == 'dev'
+  - pytest-benchmark[histogram]>=4.0 ; extra == 'dev'
+  - pytest-cov>=5.0 ; extra == 'dev'
+  - pytest>=8.0 ; extra == 'dev'
+  - ruff>=0.3 ; extra == 'dev'
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.45.1-default_hbd61a6d_101.conda
   sha256: 565941ac1f8b0d2f2e8f02827cbca648f4d18cd461afc31f15604cd291b5c5f3
   md5: 12bd9a3f089ee6c9266a37dab82afabd
@@ -822,6 +835,16 @@ packages:
   - pkg:pypi/openai?source=hash-mapping
   size: 399207
   timestamp: 1770756759742
+- pypi: https://files.pythonhosted.org/packages/5a/13/25fadab5b522244b42f4bc78ba4cf781dae986e983aa408154cd3ba0df9c/openrouter-1.1.29-py3-none-any.whl
+  name: openrouter
+  version: 1.1.29
+  sha256: 7d4df17bc45674abb33aefc9883b7e91a3c99b3d49932cd0780292aa572f4774
+  requires_dist:
+  - httpcore>=1.0.9
+  - httpx>=0.28.1
+  - jsonpath-python>=1.0.6
+  - pydantic>=2.11.2,<2.13
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.1-h35e630c_1.conda
   sha256: 44c877f8af015332a5d12f5ff0fb20ca32f896526a7d0cdb30c769df1144fb5c
   md5: f61eb8cd60ff9057122a3d338b99c00f

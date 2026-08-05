@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.common_types import ModelAnswer
+from utils.openrouter_client import OpenRouterService
 
 
 @dataclass
@@ -16,6 +17,7 @@ class ToolExecutionContext:
     messages: list[dict]
     model_name: str
     recursion_depth: int
+    openrouter_service: OpenRouterService
     context_tokens: int = 0
     completion_tokens: int = 0
     additional_system_messages: list[dict] = field(default_factory=list)

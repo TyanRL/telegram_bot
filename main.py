@@ -21,9 +21,11 @@ from aiohttp import web
 
 from utils.elastic import get_all_user_notes
 from core.openai_api import get_model_answer, transcribe_audio
-from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image_edit_session, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_generation_source_image, set_user_image_edit_session, start
+from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image_edit_session, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image_edit_session, start
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
+from utils.openrouter_client import OpenRouterService
+from core.tool_helpers import generated_image_from_session_dict
 
 version="27.0"
 
@@ -58,7 +60,12 @@ administrators_ids = get_admins()
 
 semaphore = asyncio.Semaphore(10)
 
-async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message)->tuple[str|None, str|None]:
+async def get_bot_reply(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message,
+    openrouter_service: OpenRouterService,
+)->tuple[str|None, str|None]:
     try:
         user=update.effective_user
         if user is None:
@@ -72,18 +79,20 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
             try:
                 # Берем current_image из visual session
                 image_dict = session["current_image"]
-                img_type = image_dict["image_type"]
-                img_b64_str = image_dict["image"]
+                image = generated_image_from_session_dict(image_dict)
                 history = await user_histories.get(user.id, [])
                 history.append({
                     "role": "user",
                     "content": [
                                 {"type": "input_text", "text": user_message},
-                                {"type": "input_image", "image_url": f"data:{img_type};base64,{img_b64_str}"},
+                                {"type": "input_image", "image": image},
                     ],
                 })
             except Exception as e:
-                logger.error(f"Ошибка при обработке вашего запроса c изображением: {e}")
+                logger.error(
+                    "Ошибка при обработке запроса с изображением: type=%s",
+                    type(e).__name__,
+                )
                 return "Извините, произошла ошибка при обработке вашего запроса c изображением.", None
         else:
             # Получаем или создаем историю сообщений для пользователя
@@ -91,29 +100,38 @@ async def get_bot_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user
     
    
         system_message= get_system_message()
-        logger.info([system_message] + history)
+        logger.info(
+            "Подготовка запроса модели: history_items=%s, has_visual_session=%s",
+            len(history),
+            session is not None,
+        )
         
         
-        m_a = await get_model_answer(update, context, [system_message] + history)
+        m_a = await get_model_answer(
+            update,
+            context,
+            [system_message] + history,
+            openrouter_service=openrouter_service,
+        )
         
         
         # Добавляем дополнительную информацию в историю
         if m_a.additional_system_messages is not None:
             for message in m_a.additional_system_messages:
                 history.append(message)
-                logger.info(f"В историю добавлена новая системная информация: {message}")
+                logger.info("В историю добавлена системная информация: type=%s", type(message).__name__)
         # Добавляем ответ бота в историю
         if m_a.bot_reply is not None:
             history.append({"role": "assistant", "content": m_a.bot_reply})
         
         # Обновляем историю пользователя
         await user_histories.set(user.id, history)
-        logger.info(f"История пользователя обновлена: {history}")
+        logger.info("История пользователя обновлена: items=%s", len(history))
         
         return m_a.bot_reply, f"Токенов: использовано - {m_a.ctx_token}, сгенерировано - {m_a.completion_token}."
 
     except Exception as e:
-        logger.error(f"Ошибка при обращении к OpenAI API: {e}")
+        logger.error("Ошибка при обращении к OpenAI API: type=%s", type(e).__name__)
         return "Извините, произошла ошибка при обработке вашего запроса.", None
 
 async def get_history(user_id, user_message):
@@ -173,11 +191,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     return await handle_message_inner(update, context, user_message)
 
-async def handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message):
+async def handle_message_inner(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message,
+):
     user = update.effective_user
     if user is None:
         return
-    bot_reply, token_service_message = await get_bot_reply(update, context, user_message)
+    openrouter_service = context.application.bot_data.get("openrouter_service")
+    if not isinstance(openrouter_service, OpenRouterService):
+        logger.error("OpenRouter service отсутствует в application.bot_data")
+        await reply_service_text(update, "Media-сервис временно недоступен.")
+        return
+    bot_reply, token_service_message = await get_bot_reply(
+        update,
+        context,
+        user_message,
+        openrouter_service,
+    )
     if bot_reply is None or len(bot_reply) == 0:
         return
     await send_big_text(update, bot_reply)
@@ -220,7 +252,8 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                  return
             await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
             await handle_message_inner(update, context, recognized_text) 
-            logger.info(f"Распознанный текст от пользователя {user.id}: {recognized_text}")
+            if recognized_text:
+                logger.info("Распознанный текст от пользователя %s: length=%s", user.id, len(recognized_text))
         except Exception as e:
             logger.error(f"Ошибка при распознавании текста через OpenAI: {e}")
             await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
@@ -306,9 +339,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             }
             await set_user_image_edit_session(update.effective_user.id, session)
             
-            # Для обратной совместимости сохраняем в старые состояния
-            await set_user_generation_source_image(update.effective_user.id, image_dict)
-
         await reply_service_text(update,"Изображение загружено и стало текущей основой для редактирования. Можешь задать вопрос по нему, попросить изменить/стилизовать его или сделать видео на основе. Для последовательных правок не нужно повторно отправлять картинку.")
     except Exception as e:
         await reply_service_text(update,"Ошибка при загрузке изображения")
@@ -339,77 +369,88 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     set_bot_version(version)
     init_db()
-    # Инициализация приложения с увеличенными таймаутами для загрузки изображений
-    request = HTTPXRequest(
-        connection_pool_size=8,
-        read_timeout=120,
-        write_timeout=180,
-        connect_timeout=30,
-        pool_timeout=30,
-    )
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).request(request).build()
+    openrouter_service = OpenRouterService.from_env()
 
-    # Добавление обработчиков
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
-    application.add_handler(MessageHandler(filters.LOCATION, location_handler))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    # Добавление обработчиков команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("list", list_users))
-    application.add_handler(CommandHandler("add", add_user))
-    application.add_handler(CommandHandler("remove", remove_user))
-    application.add_handler(CommandHandler("reset", reset))
-    application.add_handler(CommandHandler("last_session", get_last_session))
-    application.add_handler(CommandHandler("info", info))
-    application.add_handler(CommandHandler("location", add_location_button))
-    application.add_handler(CommandHandler("show_notes", show_notes))
-    application.add_handler(CommandHandler("send_notification", send_service_notification))
-    
-    
-    
+    async with openrouter_service:
+        # Инициализация приложения с увеличенными таймаутами для загрузки изображений
+        request = HTTPXRequest(
+            connection_pool_size=8,
+            read_timeout=120,
+            write_timeout=180,
+            connect_timeout=30,
+            pool_timeout=30,
+        )
+        application = (
+            ApplicationBuilder()
+            .token(TELEGRAM_BOT_TOKEN)
+            .request(request)
+            .build()
+        )
+        application.bot_data["openrouter_service"] = openrouter_service
 
-    # Инициализация и запуск приложения
-    await application.initialize()
-    await application.start()
+        # Добавление обработчиков
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
+        application.add_handler(MessageHandler(filters.LOCATION, location_handler))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("list", list_users))
+        application.add_handler(CommandHandler("add", add_user))
+        application.add_handler(CommandHandler("remove", remove_user))
+        application.add_handler(CommandHandler("reset", reset))
+        application.add_handler(CommandHandler("last_session", get_last_session))
+        application.add_handler(CommandHandler("info", info))
+        application.add_handler(CommandHandler("location", add_location_button))
+        application.add_handler(CommandHandler("show_notes", show_notes))
+        application.add_handler(CommandHandler("send_notification", send_service_notification))
 
-    # Настройка маршрута вебхука
-    async def telegram_webhook_handler(request):
-        update = await request.json()
-        update = Update.de_json(update, application.bot)
-        async with semaphore:
-            task = asyncio.create_task(application.process_update(update))
-            task.add_done_callback(
-                lambda t: t.exception() and logger.error("Error in update processing", exc_info=t.exception())
-                )        
-        return web.Response(text="OK")
+        await application.initialize()
+        await application.start()
+        runner: web.AppRunner | None = None
 
-    async def health_handler(request):
-        return web.Response(text=f"OK v{version} DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
+        async def telegram_webhook_handler(request):
+            update = await request.json()
+            update = Update.de_json(update, application.bot)
+            async with semaphore:
+                task = asyncio.create_task(application.process_update(update))
+                task.add_done_callback(
+                    lambda task: task.exception()
+                    and logger.error(
+                        "Error in update processing",
+                        exc_info=task.exception(),
+                    )
+                )
+            return web.Response(text="OK")
 
-    # Создание веб-приложения aiohttp
-    app = web.Application()
-    app.router.add_post('/telegram-webhook', telegram_webhook_handler)
-    app.router.add_get('/health', health_handler)
+        async def health_handler(request):
+            return web.Response(
+                text=f"OK v{version} DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}"
+            )
 
-    # Запуск вебхука
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', '8443')))
-    await site.start()
+        app = web.Application()
+        app.router.add_post("/telegram-webhook", telegram_webhook_handler)
+        app.router.add_get("/health", health_handler)
 
-    # Установка вебхука в Telegram
-    await set_telegram_webhook(application)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8443")))
+        await site.start()
 
-    # Запуск бота
-    logger.info(f"Bot v{version} is running. DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}")
-    try:
-        await asyncio.Event().wait()
-    finally:
-        # Корректная остановка приложения
-        await application.stop()
-        await application.shutdown()
-        logger.info("Bot has stopped.")
+        await set_telegram_webhook(application)
+
+        logger.info(
+            "Bot v%s is running. DefaultModel - %s",
+            version,
+            OpenAI_Models.DEFAULT_MODEL.value,
+        )
+        try:
+            await asyncio.Event().wait()
+        finally:
+            if runner is not None:
+                await runner.cleanup()
+            await application.stop()
+            await application.shutdown()
+            logger.info("Bot has stopped.")
 
 if __name__ == '__main__':
     asyncio.run(main())
