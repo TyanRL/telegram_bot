@@ -1,6 +1,6 @@
+import logging
 from dataclasses import dataclass
 from enum import Enum
-import logging
 
 from utils.openrouter_client import (
     OpenRouterAuthenticationError,
@@ -15,7 +15,6 @@ from utils.openrouter_client import (
     OpenRouterVideoExpiredError,
     OpenRouterVideoFailedError,
 )
-
 
 logger = logging.getLogger(__name__)
 

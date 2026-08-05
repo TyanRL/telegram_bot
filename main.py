@@ -1,33 +1,53 @@
 import asyncio
 import base64
+import logging
 import mimetypes
 import os
-import logging
 import tempfile
 
+from aiohttp import web
 from PIL import Image
 from telegram import Update
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
-    Application
 )
 from telegram.request import HTTPXRequest
-from aiohttp import web
 
-
-from utils.elastic import get_all_user_notes
 from core.openai_api import get_model_answer, transcribe_audio
-from core.state_and_commands import  TELEGRAM_BOT_TOKEN, OpenAI_Models, add_location_button, add_user, get_all_histories, get_last_session, get_local_time, get_notes_text, get_user_image_edit_session, info, list_users, remove_user, reply_service_text, reply_text, reset, send_service_notification, set_bot_version, set_session_info, set_user_image_edit_session, start
+from core.state_and_commands import (
+    TELEGRAM_BOT_TOKEN,
+    OpenAI_Models,
+    add_location_button,
+    add_user,
+    get_all_histories,
+    get_last_session,
+    get_local_time,
+    get_notes_text,
+    get_user_image_edit_session,
+    info,
+    list_users,
+    remove_user,
+    reply_service_text,
+    reply_text,
+    reset,
+    send_service_notification,
+    set_bot_version,
+    set_session_info,
+    set_user_image_edit_session,
+    start,
+)
+from core.tool_helpers import generated_image_from_session_dict
+from utils.elastic import get_all_user_notes
+from utils.openrouter_client import OpenRouterService
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
-from utils.openrouter_client import OpenRouterService
-from core.tool_helpers import generated_image_from_session_dict
 
-version="27.0"
+version="28.0"
 
 
 # URL вебхука

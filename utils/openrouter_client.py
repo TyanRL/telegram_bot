@@ -18,7 +18,6 @@ from core.common_types import (
     VideoGenerationOptions,
 )
 
-
 T = TypeVar("T")
 
 

@@ -3,25 +3,32 @@ import asyncio
 import datetime
 import logging
 import os
-
-
-from zoneinfo import ZoneInfo
 from enum import Enum, unique
-from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, Bot, User
+from zoneinfo import ZoneInfo
+
+from telegram import Bot, KeyboardButton, ReplyKeyboardMarkup, Update, User
 from telegram.ext import (
     ContextTypes,
 )
+from telegram.helpers import escape_markdown
 
 from core.common_types import SafeDict
 from core.md_clean import clean_message
-from utils.sql import get_admins, get_all, get_all_session, in_admin_list, in_user_list, remove_user_id, save_last_session, save_user_id
-from telegram.helpers import escape_markdown
+from utils.sql import (
+    get_admins,
+    get_all,
+    get_all_session,
+    in_admin_list,
+    in_user_list,
+    remove_user_id,
+    save_last_session,
+    save_user_id,
+)
+
+
 @unique
 class OpenAI_Models(Enum):
-    DEFAULT_MODEL="gpt-5.4"
-    MINI ="gpt-5.1-mini"
-    SEARCH_MODEL="gpt-5.1"
-
+    DEFAULT_MODEL="gpt-5.6-terra"
 
 MDv2_PARSE_MODE="MarkdownV2"
 

@@ -22,7 +22,6 @@ from openrouter.components.imagegenerationrequest import (
 
 from core.common_types import GeneratedImage, ImageEditOptions, ImageGenerationOptions
 
-
 GENERATION_IMAGE_MODEL = "qwen/qwen-image-3-pro"
 EDIT_IMAGE_MODEL = "google/gemini-3.1-flash-image"
 

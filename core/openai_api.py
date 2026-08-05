@@ -1,10 +1,9 @@
 import asyncio
 import base64
-from functools import partial
 import json
 import logging
 import os
-
+from functools import partial
 
 from openai import OpenAI
 from openai.types.responses import Response
@@ -16,11 +15,11 @@ from core.state_and_commands import (
     get_user_model,
     get_voice_recognition_model,
 )
-from core.tool_registry import TOOLS_SCHEMA, get_tool_registry, ToolExecutionContext
-from utils.openrouter_client import OpenRouterService
 
 # Импорт handler-модулей для регистрации в реестре
-from core.tool_handlers import weather, media, model, notes  # noqa: F401
+from core.tool_handlers import media, model, notes, weather  # noqa: F401
+from core.tool_registry import TOOLS_SCHEMA, ToolExecutionContext, get_tool_registry
+from utils.openrouter_client import OpenRouterService
 
 logger = logging.getLogger(__name__)
 

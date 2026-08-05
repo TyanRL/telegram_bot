@@ -24,7 +24,6 @@ from utils.openrouter_client import (
     OpenRouterVideoFailedError,
 )
 
-
 DEFAULT_VIDEO_MODEL = "google/veo-3.1-fast"
 TERMINAL_VIDEO_STATUSES = {"failed", "cancelled", "expired"}
 
