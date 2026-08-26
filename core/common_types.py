@@ -102,7 +102,7 @@ class VideoGenerationOptions:
     generate_audio: bool | None = None
     seed: int | None = None
     size: str | None = None
-    timeout_seconds: float = 180.0
+    timeout_seconds: float = 360.0 # для 10 секунд таймоут должен быть 180 сек
     polling_interval_seconds: float = 5.0
     index: int = 0
 
