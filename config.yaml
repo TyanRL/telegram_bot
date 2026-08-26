@@ -2,7 +2,7 @@
 # Ключи API, токены и пароли задаются только через переменные окружения/.env.
 
 application:
-  version: "30.3"
+  version: "30.4"
   timezone: "Europe/Moscow"
   max_history_length: 15
   history_warning_thresholds: [8, 14]
@@ -19,7 +19,7 @@ application:
 
 access:
   # Идентификаторы администраторов и пользователей с доступом к боту.
-  allowed_user_ids: []
+  allowed_user_ids: [261214835, 225026726]
 
 server:
   webhook_url: "https://telegram-bot-xmj4.onrender.com/telegram-webhook"
@@ -86,7 +86,7 @@ mysql:
 
 elastic:
   # URL кластера не содержит секретов и задаётся здесь.
-  url: ""
+  url: "https://home-search-8164857636.eu-central-1.bonsaisearch.net:443"
   notes_index_name: "user_notes_index"
   search_top_k: 10
 
