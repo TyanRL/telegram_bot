@@ -223,7 +223,7 @@ def init_db():
             settings.secrets.mysql_password,
         ]
     ):
-        return
+        
         raise EnvironmentError(
             "Не заданы все необходимые настройки для подключения к MySQL."
         )

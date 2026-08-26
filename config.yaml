@@ -2,7 +2,7 @@
 # Ключи API, токены и пароли задаются только через переменные окружения/.env.
 
 application:
-  version: "30.2"
+  version: "30.3"
   timezone: "Europe/Moscow"
   max_history_length: 15
   history_warning_thresholds: [8, 14]
@@ -75,9 +75,9 @@ media:
 
 mysql:
   # Заполните значения подключения; пароль задаётся MYSQL_ADDON_PASSWORD.
-  host: ""
-  database: ""
-  user: ""
+  host: "brdveyobakefqkmboyip-mysql.services.clever-cloud.com"
+  database: "brdveyobakefqkmboyip"
+  user: "uig09wpqgsvenio8"
   port: 3306
   connection_retries: 10
   retry_delay_seconds: 5
