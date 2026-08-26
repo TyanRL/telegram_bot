@@ -8,6 +8,7 @@ from core.common_types import (
     ImageGenerationOptions,
     ToolResult,
 )
+from core.config import settings
 from core.generation_error_mapper import map_generation_error
 from core.state_and_commands import (
     animate_service_message,
@@ -257,7 +258,11 @@ async def handle_generate_video(
 
     status_message = await reply_service_message(ctx.update, "Видео генерируется, подождите")
     animation_task = asyncio.create_task(
-        animate_service_message(status_message, "Видео генерируется, подождите", interval=1.5)
+        animate_service_message(
+            status_message,
+            "Видео генерируется, подождите",
+            interval=settings.telegram.service_animation_interval_seconds,
+        )
     )
 
     try:
@@ -273,7 +278,10 @@ async def handle_generate_video(
     except Exception as error:
         logger.error("Ошибка при генерации видео: %s", error, exc_info=True)
         try:
-            await status_message.edit_text("_Произошла ошибка при генерации видео._", parse_mode="MarkdownV2")
+            await status_message.edit_text(
+                "_Произошла ошибка при генерации видео._",
+                parse_mode=settings.telegram.parse_mode,
+            )
         except Exception:
             pass
         return _answer(ctx, None)
@@ -285,7 +293,10 @@ async def handle_generate_video(
             pass
 
     try:
-        await status_message.edit_text("_Видео готово, отправляю..._", parse_mode="MarkdownV2")
+        await status_message.edit_text(
+            "_Видео готово, отправляю..._",
+            parse_mode=settings.telegram.parse_mode,
+        )
     except Exception:
         pass
 

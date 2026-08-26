@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.config import settings
+
 
 @dataclass(frozen=True, slots=True)
 class GeneratedImage:
@@ -72,7 +74,7 @@ class ImageGenerationOptions:
     background: str | None = None
     size: str | None = None
     seed: int | None = None
-    n: int = 1
+    n: int = settings.media.image_generation_count
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,30 +83,29 @@ class ImageEditOptions:
 
     aspect_ratio: str | None = None
     resolution: str | None = None
-    output_format: str = "png"
+    output_format: str = settings.media.image_edit_output_format
     output_compression: int | None = None
     quality: str | None = None
     background: str | None = None
     size: str | None = None
     seed: int | None = None
-    n: int = 1
+    n: int = settings.media.image_edit_count
 
 
 @dataclass(frozen=True, slots=True)
 class VideoGenerationOptions:
     """Параметры запуска и ожидания генерации видео."""
 
-    model: str = "alibaba/wan-3.0"
-    resolution: str = "480p"
-    aspect_ratio: str | None = None
-    duration: int | None = 15 #для wan-3.0
-    #duration: int | None = None
-    generate_audio: bool | None = None
+    model: str = settings.media.video_model
+    resolution: str = settings.media.video_resolution
+    aspect_ratio: str | None = settings.media.video_aspect_ratio
+    duration: int | None = settings.media.video_duration
+    generate_audio: bool | None = settings.media.video_generate_audio
     seed: int | None = None
-    size: str | None = None
-    timeout_seconds: float = 360.0 # для 10 секунд таймоут должен быть 180 сек
-    polling_interval_seconds: float = 5.0
-    index: int = 0
+    size: str | None = settings.media.video_size
+    timeout_seconds: float = settings.media.video_timeout_seconds
+    polling_interval_seconds: float = settings.media.video_polling_interval_seconds
+    index: int = settings.media.video_index
 
 
 @dataclass

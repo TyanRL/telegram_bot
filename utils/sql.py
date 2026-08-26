@@ -1,28 +1,19 @@
-import os
 import logging
 import time
 import mysql.connector
 
 from core.common_types import SafeList
-
-# Получение параметров подключения из переменных окружения
-MYSQL_HOST = os.getenv('MYSQL_ADDON_HOST')
-MYSQL_DB = os.getenv('MYSQL_ADDON_DB')
-MYSQL_USER = os.getenv('MYSQL_ADDON_USER')
-MYSQL_PASSWORD = os.getenv('MYSQL_ADDON_PASSWORD')
-MYSQL_PORT = os.getenv('MYSQL_ADDON_PORT', '3306')
+from core.config import settings
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=getattr(logging, settings.application.log_level.upper(), logging.INFO)
+)
 
 # администраторы
 administrators_ids = []
 # пользователи
 user_ids= SafeList([])
-
-user_ids_table_name= 'user_ids'
-last_session_table_name = 'last_session_big_int'
-
 
 def get_admins():
     return administrators_ids
@@ -37,21 +28,25 @@ def connect_to_db():
     while True:
         try:
             return mysql.connector.connect(
-                host=MYSQL_HOST,
-                user=MYSQL_USER,
-                password=MYSQL_PASSWORD,
-                database=MYSQL_DB,
-                port=MYSQL_PORT
+                host=settings.mysql.host,
+                user=settings.mysql.user,
+                password=settings.secrets.mysql_password,
+                database=settings.mysql.database,
+                port=settings.mysql.port,
             )
         except mysql.connector.Error as err:
-            logging.error(f"Ошибка подключения к MySQL: {err}. Попытка {count} из 10.")
+            logging.error(
+                "Ошибка подключения к MySQL: %s. Попытка %s из %s.",
+                err,
+                count,
+                settings.mysql.connection_retries,
+            )
             count += 1
-            if count > 10:
+            if count > settings.mysql.connection_retries:
                 logging.error("Подключение к MySQL не удалось.")
                 raise
             else:
-                # ждем 5 секунд
-                time.sleep(5)
+                time.sleep(settings.mysql.retry_delay_seconds)
                 continue
 
 
@@ -65,7 +60,7 @@ def create_user_id_table():
     try:
         cursor = connection.cursor()
         cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {user_ids_table_name} (
+            CREATE TABLE IF NOT EXISTS {settings.mysql.user_ids_table_name} (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 user_id BIGINT NOT NULL
             )
@@ -87,7 +82,10 @@ async def save_user_id(user_id):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute(f"INSERT INTO {user_ids_table_name} (user_id) VALUES (%s)", (user_id,))
+        cursor.execute(
+            f"INSERT INTO {settings.mysql.user_ids_table_name} (user_id) VALUES (%s)",
+            (user_id,),
+        )
         connection.commit()
     except mysql.connector.Error as err:
         logging.error(f"Ошибка сохранения пользователя в MySQL: {err}")
@@ -101,7 +99,7 @@ def get_user_ids():
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute(f"SELECT DISTINCT user_id FROM {user_ids_table_name}")
+        cursor.execute(f"SELECT DISTINCT user_id FROM {settings.mysql.user_ids_table_name}")
         result = cursor.fetchall()
         return [row[0] for row in result]
     except mysql.connector.Error as err:
@@ -117,7 +115,10 @@ async def remove_user_id(user_id):
     connection = connect_to_db()
     try:
         cursor = connection.cursor()
-        cursor.execute(f"DELETE FROM {user_ids_table_name} WHERE user_id = %s", (user_id,))
+        cursor.execute(
+            f"DELETE FROM {settings.mysql.user_ids_table_name} WHERE user_id = %s",
+            (user_id,),
+        )
         connection.commit()
     except mysql.connector.Error as err:
         logging.error(f"Ошибка удаления пользователя из MySQL: {err}")
@@ -132,7 +133,7 @@ def create_last_session_table():
     try:
         cursor = connection.cursor()
         cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS {last_session_table_name} (
+        CREATE TABLE IF NOT EXISTS {settings.mysql.last_session_table_name} (
         userid BIGINT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) NOT NULL,
         last_session_time DATETIME
@@ -157,7 +158,7 @@ async def save_last_session(user_id, username, last_session_time):
     try:
         cursor = connection.cursor()
         cursor.execute(  f"""
-                INSERT INTO {last_session_table_name} (userid, username, last_session_time) VALUES (%s, %s, %s)
+                INSERT INTO {settings.mysql.last_session_table_name} (userid, username, last_session_time) VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE username = VALUES(username), last_session_time = VALUES(last_session_time)
                 """,
                 (user_id, username, last_session_time))
@@ -179,8 +180,8 @@ def get_all_session():
             userid, 
             username, 
             last_session_time 
-        FROM 
-            {last_session_table_name} 
+        FROM
+            {settings.mysql.last_session_table_name}
         ORDER BY 
             last_session_time DESC 
         LIMIT 10;
@@ -201,11 +202,8 @@ def get_all_session():
 
 def get_admins_from_os():
     global administrators_ids
-    allowed_users_str = os.getenv('ALLOWED_USER_IDS', '')
-    administrators_ids = [
-        int(uid.strip()) for uid in allowed_users_str.split(',') if uid.strip().isdigit()
-    ]
-    logging.info(f"Admins uploaded from environment. Ids - {administrators_ids}")
+    administrators_ids = list(settings.access.allowed_user_ids)
+    logging.info(f"Admins loaded from config. Ids - {administrators_ids}")
 
 def in_admin_list(user):
     return user.id in administrators_ids
@@ -217,8 +215,17 @@ async def in_user_list(user):
 
 def init_db():
     global user_ids
-    if not all([MYSQL_HOST, MYSQL_DB, MYSQL_USER, MYSQL_PASSWORD]):
-        raise EnvironmentError("Не установлены все необходимые переменные окружения для подключения к MySQL.")
+    if not all(
+        [
+            settings.mysql.host,
+            settings.mysql.database,
+            settings.mysql.user,
+            settings.secrets.mysql_password,
+        ]
+    ):
+        raise EnvironmentError(
+            "Не заданы все необходимые настройки для подключения к MySQL."
+        )
     get_admins_from_os()
     connect_to_db()
     create_tables()

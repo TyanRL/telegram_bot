@@ -2,7 +2,6 @@ import asyncio
 import base64
 import logging
 import mimetypes
-import os
 import tempfile
 
 from aiohttp import web
@@ -18,10 +17,10 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from core.config import settings
 from core.openai_api import get_model_answer, transcribe_audio
 from core.state_and_commands import (
     TELEGRAM_BOT_TOKEN,
-    OpenAI_Models,
     add_location_button,
     add_user,
     get_all_histories,
@@ -47,11 +46,11 @@ from utils.openrouter_client import OpenRouterService
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="29.3"
+version = settings.application.version
 
 
 # URL вебхука
-WEBHOOK_URL = "https://telegram-bot-xmj4.onrender.com/telegram-webhook"
+WEBHOOK_URL = settings.server.webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -60,25 +59,17 @@ def get_system_message():
     local_time = get_local_time()
     system_message = {
         "role": "system",
-        "content":
-f"""
-Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
-1. Если по доступному в диалоге контексту видно, что пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
-2. Если по доступному в диалоге контексту видно, что у пользователя есть текущая картинка для редактирования и он просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию, используй функцию generate_image_from_image.
-3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения — используй функцию generate_video.
-4. Промпты для генерации видео и изображений создавай на английском языке, если результат генерации требует наличие текста, то этот текст не обязательно должен быть на английском.
-5. Если функция недоступна для текущего состояния сессии, не придумывай обходной путь и следуй ограничениям, которые вернет приложение.
-""",
+        "content": settings.application.system_prompt.replace("{local_time}", str(local_time)),
     }
     return system_message
 
-max_history_length = 15  # Максимальное количество сообщений в истории
+max_history_length = settings.application.max_history_length
 
 user_histories=get_all_histories()
 
 administrators_ids = get_admins()
 
-semaphore = asyncio.Semaphore(10)
+semaphore = asyncio.Semaphore(settings.application.concurrency_limit)
 
 async def get_bot_reply(
     update: Update,
@@ -183,14 +174,18 @@ async def send_big_text(update: Update, text_to_send):
     if update.effective_user is None:
         return
     user = update.effective_user
-    if len(text_to_send) > 4096:
-        messages = [text_to_send[i:i+4096] for i in range(0, len(text_to_send), 4096)]
+    max_message_length = settings.telegram.max_message_length
+    if len(text_to_send) > max_message_length:
+        messages = [
+            text_to_send[i:i + max_message_length]
+            for i in range(0, len(text_to_send), max_message_length)
+        ]
         for msg in messages:
             await reply_text(update,msg)
     else:
         await reply_text(update,text_to_send)
     history = await user_histories.get(user.id, [])
-    if len(history)==8 or len(history)==14:
+    if len(history) in settings.application.history_warning_thresholds:
         await reply_service_text(update, 
 f"""Чтобы уменьшить количество затрачиваемых токенов, не забывайте сбрасывать контекст (историю) беседы с помощью команды /reset или командой из меню. 
 Кроме того, бот в своих ответах учитывает предыдущие {max_history_length} сообщений. И это влияет на ответ. 
@@ -388,17 +383,18 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     set_bot_version(version)
+    settings.require_runtime_secrets()
     init_db()
-    openrouter_service = OpenRouterService.from_env()
+    openrouter_service = OpenRouterService.from_settings(settings)
 
     async with openrouter_service:
         # Инициализация приложения с увеличенными таймаутами для загрузки изображений
         request = HTTPXRequest(
-            connection_pool_size=8,
-            read_timeout=120,
-            write_timeout=180,
-            connect_timeout=30,
-            pool_timeout=30,
+            connection_pool_size=settings.telegram.connection_pool_size,
+            read_timeout=settings.telegram.read_timeout,
+            write_timeout=settings.telegram.write_timeout,
+            connect_timeout=settings.telegram.connect_timeout,
+            pool_timeout=settings.telegram.pool_timeout,
         )
         application = (
             ApplicationBuilder()
@@ -444,7 +440,7 @@ async def main():
 
         async def health_handler(request):
             return web.Response(
-                text=f"OK v{version} DefaultModel - {OpenAI_Models.DEFAULT_MODEL.value}"
+                text=f"OK v{version} DefaultModel - {settings.openai.default_model}"
             )
 
         app = web.Application()
@@ -453,7 +449,7 @@ async def main():
 
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8443")))
+        site = web.TCPSite(runner, settings.server.host, settings.server.port)
         await site.start()
 
         await set_telegram_webhook(application)
@@ -461,7 +457,7 @@ async def main():
         logger.info(
             "Bot v%s is running. DefaultModel - %s",
             version,
-            OpenAI_Models.DEFAULT_MODEL.value,
+            settings.openai.default_model,
         )
         try:
             await asyncio.Event().wait()

@@ -18,6 +18,7 @@ python-dotenv = ">=1.2.1,<2"
 aiohttp = ">=3.13.3,<4"
 requests = ">=2.32.5,<3"
 openai = ">=2.20.0,<3"
+pyyaml = ">=6.0.3,<7"
 
 
 [pypi-dependencies]

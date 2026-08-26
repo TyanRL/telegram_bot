@@ -1,13 +1,9 @@
 
 from datetime import datetime, timedelta
-import os
 import requests
 
 from core.common_types import dict_to_markdown
-
-
-weather_api_key=os.getenv('OPENWEATHERMAP_API_KEY')
-weather_api_key2=os.getenv('WEATHERSTACK_API_KEY')
+from core.config import settings
 
 weather_codes = {
     0: "Ясное небо",
@@ -47,7 +43,7 @@ def get_weather_description_by_code(code):
 
 
 def get_weekly_forecast(latitude, longitude):
-    url = "https://api.open-meteo.com/v1/forecast"
+    url = settings.integrations.weather_url
     params = {
         "latitude": latitude,  # Широта
         "longitude": longitude,  # Долгота
@@ -56,7 +52,11 @@ def get_weekly_forecast(latitude, longitude):
     }
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(
+            url,
+            params=params,
+            timeout=settings.integrations.weather_request_timeout_seconds,
+        )
         response.raise_for_status()  # Проверка на ошибки HTTP
         forecast_data = response.json()
         return dict_to_markdown(forecast_data)
@@ -66,7 +66,7 @@ def get_weekly_forecast(latitude, longitude):
 
 
 def get_weather_by_coordinates2(latitude, longitude):
-    url = "https://api.open-meteo.com/v1/forecast"
+    url = settings.integrations.weather_url
     params = {
         "latitude": latitude,  # Широта
         "longitude": longitude,  # Долгота
@@ -75,7 +75,11 @@ def get_weather_by_coordinates2(latitude, longitude):
     }
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(
+            url,
+            params=params,
+            timeout=settings.integrations.weather_request_timeout_seconds,
+        )
         response.raise_for_status()  # Проверка на ошибки HTTP
         weather_data = response.json()
         return weather_data
@@ -130,4 +134,3 @@ def get_weather_description2(latitude, longitude):
         result = f"Погода: {description}, температура: {t}°C, скорость ветра {wind_speed} км/ч, влажность {current_humidity}."
     # Возврат сообщения с описанием погоды
     return result
-

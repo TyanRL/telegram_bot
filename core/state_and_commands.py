@@ -2,7 +2,6 @@
 import asyncio
 import datetime
 import logging
-import os
 from enum import Enum, unique
 from zoneinfo import ZoneInfo
 
@@ -13,6 +12,7 @@ from telegram.ext import (
 from telegram.helpers import escape_markdown
 
 from core.common_types import SafeDict
+from core.config import settings
 from core.md_clean import clean_message
 from utils.sql import (
     get_admins,
@@ -28,14 +28,11 @@ from utils.sql import (
 
 @unique
 class OpenAI_Models(Enum):
-    DEFAULT_MODEL="gpt-5.6-terra"
+    DEFAULT_MODEL = settings.openai.default_model
 
-MDv2_PARSE_MODE="MarkdownV2"
+MDv2_PARSE_MODE = settings.telegram.parse_mode
 
-tg_bot_candidate = os.getenv('TELEGRAM_BOT_TOKEN')
-if tg_bot_candidate is None:
-    tg_bot_candidate = ""
-    raise ValueError("TELEGRAM_BOT_TOKEN is not set")
+tg_bot_candidate = settings.secrets.telegram_bot_token
 TELEGRAM_BOT_TOKEN=tg_bot_candidate
 user_histories = SafeDict()
 translate_mode=SafeDict()
@@ -43,7 +40,7 @@ translate_mode=SafeDict()
 user_model = SafeDict()
 user_visual_session = SafeDict()
 
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+bot: Bot | None = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +60,7 @@ async def set_user_model(user_id:int, model:OpenAI_Models)->None:
 async def get_user_model(user_id:int)->str:
     model = await user_model.get(user_id, None)
     if model is None:
-        return OpenAI_Models.DEFAULT_MODEL.value
+        return settings.openai.default_model
     else:
         return model
 
@@ -100,16 +97,16 @@ def get_local_time()->datetime.datetime:
     utc_time = datetime.datetime.now(ZoneInfo("UTC"))    
 
     # Преобразование времени из UTC в локальное время
-    local_timezone = ZoneInfo('Europe/Moscow')  # замените на вашу временную зону
+    local_timezone = ZoneInfo(settings.application.timezone)
     local_time = utc_time.astimezone(local_timezone)
     return local_time
 
 
-voice_recognition_model_name="whisper-1"
+voice_recognition_model_name = settings.openai.speech_model
 def get_voice_recognition_model()->str:
     return voice_recognition_model_name
 
-version="Нет данных"
+version = settings.application.version
 
 def set_bot_version(bot_version: str) -> None:
     global version
@@ -132,7 +129,11 @@ async def reply_service_message(update: Update, message: str):
     return await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)  # type: ignore
 
 
-async def animate_service_message(message, base_text: str, interval: float = 1.5):
+async def animate_service_message(
+    message,
+    base_text: str,
+    interval: float = settings.telegram.service_animation_interval_seconds,
+):
     """Анимация точек в сервисном сообщении."""
     dots = ["", ".", "..", "..."]
     i = 0
@@ -149,6 +150,8 @@ async def animate_service_message(message, base_text: str, interval: float = 1.5
 
 async def send_service_text(user_id:int, message:str):
     escaped_text = escape_markdown(message, version=2)
+    if bot is None:
+        raise RuntimeError("Telegram bot is not initialized")
     await bot.send_message(chat_id=user_id, text=f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)
 
 

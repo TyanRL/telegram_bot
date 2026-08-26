@@ -1,20 +1,25 @@
 import logging
-import os
 import re
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 import requests
 
-# Ваш API-ключ и идентификатор поисковой системы (CX)
-API_KEY = os.getenv('GOOGLE_API_KEY')
-CX = os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+from core.config import settings
 
 def search_inner(query):
     # Создаем сервис с помощью библиотеки google-api-python-client
-    service = build("customsearch", "v1", developerKey=API_KEY)
+    service = build(
+        "customsearch",
+        "v1",
+        developerKey=settings.secrets.google_api_key,
+    )
     
     # Выполняем запрос к API
-    res = service.cse().list(q=query, cx=CX, num=10).execute()
+    res = service.cse().list(
+        q=query,
+        cx=settings.secrets.google_search_engine_id,
+        num=settings.integrations.google_search_result_count,
+    ).execute()
     
     # Парсим результаты
     results = []
@@ -62,9 +67,13 @@ def clean_extra_newlines_tabs(text):
 async def get_content_by_url(url):
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": settings.integrations.web_user_agent
         }
-        response = requests.get(url, headers=headers)
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=settings.integrations.web_content_request_timeout_seconds,
+        )
         if response.status_code == 200:
             pure_text=extract_text_from_html(response.content)
             pure_text=clean_extra_newlines_tabs(pure_text)
@@ -74,5 +83,3 @@ async def get_content_by_url(url):
         return None
     except Exception as e:
         logging.error(f"Ошибка при получении контента по ссылке {url}: {e}", exc_info=True)
-
-

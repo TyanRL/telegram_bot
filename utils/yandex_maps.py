@@ -1,21 +1,15 @@
 import logging
-import os
 import requests
 from ymaps import Geocode, GeocodeAsync
 
-# Ваш API-ключ
-key_candidate = os.getenv('YMAPS_GEOCODER')
-if key_candidate is None:
-    key_candidate = ""
-    raise ValueError("YMAPS_GEOCODER is not set")
-API_KEY = key_candidate
+from core.config import settings
 
 
 
 async def get_address(latitude, longitude):
     try:
         # Создаем асинхронный клиент для геокодирования
-        geocoder = GeocodeAsync(API_KEY)
+        geocoder = GeocodeAsync(settings.secrets.yandex_geocoder_api_key)
     
         # Выполняем обратное геокодирование
         response = await geocoder.reverse([longitude, latitude])
@@ -35,21 +29,25 @@ async def get_address(latitude, longitude):
 def get_location_by_address(address):
     try:
         # Проверка API ключа
-        if not API_KEY or API_KEY == "":
+        if not settings.secrets.yandex_geocoder_api_key:
             logging.error("API ключ Yandex Maps не установлен или пустой")
             return None
 
         logging.info(f"Запрос геолокации для адреса: {address}")
 
         # Запрос
-        url = "https://geocode-maps.yandex.ru/1.x/"
+        url = settings.integrations.yandex_geocoder_url
         params = {
-            "apikey": API_KEY,
+            "apikey": settings.secrets.yandex_geocoder_api_key,
             "geocode": address,
             "format": "json"
         }
 
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(
+            url,
+            params=params,
+            timeout=settings.integrations.yandex_request_timeout_seconds,
+        )
 
         # Обработка ответа
         if response.status_code == 200:

@@ -8,6 +8,7 @@ from PIL import Image
 from telegram import InputFile, Update
 
 from core.common_types import GeneratedImage, GeneratedVideo
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ def _pad_image_to_aspect_ratio(img: Image.Image, target_ratio: float) -> Image.I
 
 def prepare_image_for_telegram(
     image: GeneratedImage,
-    max_size: int = 1280,
-    quality: int = 88,
+    max_size: int = settings.media.telegram_image_max_size,
+    quality: int = settings.media.telegram_image_jpeg_quality,
     target_aspect_ratio: float | None = None,
 ) -> tuple[BytesIO, str, int, int, float]:
     """Подготавливает бинарное изображение для Telegram.
@@ -90,20 +91,32 @@ async def send_video_to_telegram(
     """Отправляет видео в Telegram, пробуя video, затем document. Возвращает True при успехе."""
     try:
         with video.path.open("rb") as video_file:
-            await update.message.reply_video(video=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
+            await update.message.reply_video(
+                video=InputFile(video_file),
+                write_timeout=settings.telegram.video_write_timeout,
+                read_timeout=settings.telegram.video_read_timeout,
+                connect_timeout=settings.telegram.video_connect_timeout,
+                pool_timeout=settings.telegram.video_pool_timeout,
+            )  # type: ignore
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке видео как video: {e}", exc_info=True)
         try:
             with video.path.open("rb") as video_file:
-                await update.message.reply_document(document=InputFile(video_file), write_timeout=180, read_timeout=120, connect_timeout=30,pool_timeout=30)  # type: ignore
+                await update.message.reply_document(
+                    document=InputFile(video_file),
+                    write_timeout=settings.telegram.video_write_timeout,
+                    read_timeout=settings.telegram.video_read_timeout,
+                    connect_timeout=settings.telegram.video_connect_timeout,
+                    pool_timeout=settings.telegram.video_pool_timeout,
+                )  # type: ignore
             return True
         except Exception as e2:
             logger.error(f"Ошибка при отправке видео как document: {e2}", exc_info=True)
             try:
                 await status_message.edit_text(
                     "_Видео сгенерировано, но не удалось отправить его в Telegram._",
-                    parse_mode="MarkdownV2",
+                    parse_mode=settings.telegram.parse_mode,
                 )
             except Exception:
                 pass

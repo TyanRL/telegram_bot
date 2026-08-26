@@ -1,31 +1,30 @@
 from datetime import datetime, timezone
 import logging
-import os
 import re
 from elasticsearch import Elasticsearch
 
 from core.common_types import dict_to_markdown
+from core.config import settings
 
-# Получите URL кластера из переменной окружения
-bonsai_url = os.getenv('BONSAI_URL')
-access_key = os.getenv('ELASTIC_ACCESS_KEY')
-access_secret_key = os.getenv('ELASTIC_SECRET_KEY')
-
-
-notes_index_name="user_notes_index"
-
-if not bonsai_url:
-    raise ValueError("Переменная окружения BONSAI_URL не установлена")
-
-es = Elasticsearch(
-    [bonsai_url],
-    http_auth=(access_key, access_secret_key)
-)
+notes_index_name = settings.elastic.notes_index_name
+es: Elasticsearch | None = None
 
 def get_connection():
+    global es
+    if es is None:
+        if not settings.elastic.url:
+            raise EnvironmentError("Не задан elastic.url в config.yaml")
+        es = Elasticsearch(
+            [settings.elastic.url],
+            http_auth=(
+                settings.secrets.elastic_access_key,
+                settings.secrets.elastic_secret_key,
+            ),
+        )
     return es
 
 def create_indexes():
+    client = get_connection()
     # Настройки и маппинг 
     index_settings = {
     "settings": {
@@ -74,8 +73,11 @@ def create_indexes():
     }
     response = {}
     
-    if not es.indices.exists(index=notes_index_name):
-        response = es.indices.create(index=notes_index_name, body=index_settings, ignore=400)   
+    if not client.indices.exists(index=notes_index_name):
+        response = client.indices.create(
+            index=notes_index_name,
+            body=index_settings,
+        )
     else: 
         print(f'Индекс {notes_index_name} уже существует.')
         return
@@ -123,18 +125,24 @@ def add_or_update_document_common(index_name, document, document_id, need_to_upd
             "doc_as_upsert": True
         }
         if need_to_update_documents:
-            response = es.update(index=index_name, id=document_id, body=update_body)
+            response = get_connection().update(index=index_name, id=document_id, body=update_body)
             # print(f"Document {document_id} updated or created")
         else:
-            if not es.exists(index=index_name, id=document_id):
-                response = es.index(index=index_name, id=document_id, body=document)
+            if not get_connection().exists(index=index_name, id=document_id):
+                response = get_connection().index(index=index_name, id=document_id, body=document)
             else:
-                skipped_docs += 1
                 # print(f"Document {document_id} exists and not updated")
+                pass
     except Exception as e:
          logging.error(f"Error in add_or_update_document: {e}")
 
-def get_notes_by_query(user_id: int, search_text: str = None, start_date: str = None, end_date: str = None, top_k=10):
+def get_notes_by_query(
+    user_id: int,
+    search_text: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    top_k: int | None = None,
+):
     try:
         must_clauses = []
 
@@ -175,10 +183,10 @@ def get_notes_by_query(user_id: int, search_text: str = None, start_date: str = 
                     "must": must_clauses
                 }
             },
-            "size": top_k
+            "size": top_k if top_k is not None else settings.elastic.search_top_k,
         }
 
-        response = es.search(index=notes_index_name, body=search_query)
+        response = get_connection().search(index=notes_index_name, body=search_query)
         documents = rebuild_response(response)
         return documents
     except Exception as e:
@@ -202,7 +210,7 @@ def get_all_user_notes(user_id:int):
         }
 
         # Выполнение запроса
-        response = es.search(index=notes_index_name, body=search_query)
+        response = get_connection().search(index=notes_index_name, body=search_query)
         # Вывод результатов
         documents = rebuild_response(response)
         return documents
@@ -211,7 +219,7 @@ def get_all_user_notes(user_id:int):
         return []
 def remove_note(note_id:int):
     try:
-        es.delete(index=notes_index_name, id=note_id)
+        get_connection().delete(index=notes_index_name, id=str(note_id))
         return True
     except Exception as e:
         logging.error("Ошибка при удалении в ElasticSearch", exc_info=True)

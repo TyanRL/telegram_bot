@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -13,9 +12,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.common_types import GeneratedImage, ModelAnswer, ToolResult
+from core.config import settings
 from core.state_and_commands import (
     get_user_model,
-    get_voice_recognition_model,
 )
 
 # Импорт handler-модулей для регистрации в реестре
@@ -26,10 +25,10 @@ from utils.openrouter_client import OpenRouterService
 logger = logging.getLogger(__name__)
 
 # Инициализация OpenAI
-opena_ai_api_key = os.getenv('OPENAI_API_KEY')
+opena_ai_api_key = settings.secrets.openai_api_key
 openai_client = OpenAI(api_key=opena_ai_api_key)
 
-MAXIMUM_TOOL_ROUNDS = 10
+MAXIMUM_TOOL_ROUNDS = settings.application.max_tool_rounds
 # Сохраняем старое имя для внешнего кода, который мог импортировать константу.
 MAXIMUM_RECURSION_ANSWER_DEPTH = MAXIMUM_TOOL_ROUNDS
 
@@ -360,13 +359,13 @@ async def get_simple_answer(
     request_kwargs: dict[str, Any] = {
         "model": model_name,
         "input": prepared_messages,
-        "max_output_tokens": 16384,
+        "max_output_tokens": settings.openai.max_output_tokens,
         "tools": TOOLS_SCHEMA,
-        "text": {"verbosity": "low"},
-        "reasoning": {"effort": "medium"},
+        "text": {"verbosity": settings.openai.verbosity},
+        "reasoning": {"effort": settings.openai.reasoning_effort},
         # Без сохранённого response нельзя надёжно продолжить reasoning через
         # previous_response_id после выполнения function call.
-        "store": True,
+        "store": settings.openai.store_responses,
     }
     if previous_response_id is not None:
         request_kwargs["previous_response_id"] = previous_response_id
@@ -381,7 +380,7 @@ async def get_simple_answer(
 def transcribe_audio(audio_filename):
     try:
         transcription = openai_client.audio.transcriptions.create(
-            model=get_voice_recognition_model(),
+            model=settings.openai.speech_model,
             file=open(audio_filename, 'rb')
         )
         recognized_text = transcription.text

@@ -23,8 +23,9 @@ from utils.openrouter_client import (
     OpenRouterVideoExpiredError,
     OpenRouterVideoFailedError,
 )
+from core.config import settings
 
-DEFAULT_VIDEO_MODEL = "alibaba/wan-3.0"
+DEFAULT_VIDEO_MODEL = settings.media.video_model
 TERMINAL_VIDEO_STATUSES = {"failed", "cancelled", "expired"}
 
 
@@ -76,7 +77,7 @@ async def generate(
         ]
 
     job = await client.video_generation.generate_async(
-        model=selected_options.model or DEFAULT_VIDEO_MODEL,
+        model=selected_options.model or settings.media.video_model,
         prompt=prompt,
         resolution=cast(
             VideoGenerationRequestResolution | None,

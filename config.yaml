@@ -1,0 +1,100 @@
+# Несекретные настройки приложения.
+# Ключи API, токены и пароли задаются только через переменные окружения/.env.
+
+application:
+  version: "30.0"
+  timezone: "Europe/Moscow"
+  max_history_length: 15
+  history_warning_thresholds: [8, 14]
+  max_tool_rounds: 10
+  concurrency_limit: 10
+  log_level: "INFO"
+  system_prompt: |-
+    Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
+    1. Если по доступному в диалоге контексту видно, что пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
+    2. Если по доступному в диалоге контексту видно, что у пользователя есть текущая картинка для редактирования и он просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию, используй функцию generate_image_from_image.
+    3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения — используй функцию generate_video.
+    4. Промпты для генерации видео и изображений создавай на английском языке, если результат генерации требует наличие текста, то этот текст не обязательно должен быть на английском.
+    5. Если функция недоступна для текущего состояния сессии, не придумывай обходной путь и следуй ограничениям, которые вернет приложение.
+
+access:
+  # Идентификаторы администраторов и пользователей с доступом к боту.
+  allowed_user_ids: []
+
+server:
+  webhook_url: "https://telegram-bot-xmj4.onrender.com/telegram-webhook"
+  host: "0.0.0.0"
+  port: 8443
+
+telegram:
+  parse_mode: "MarkdownV2"
+  max_message_length: 4096
+  connection_pool_size: 8
+  read_timeout: 120
+  write_timeout: 180
+  connect_timeout: 30
+  pool_timeout: 30
+  service_animation_interval_seconds: 1.5
+  video_write_timeout: 180
+  video_read_timeout: 120
+  video_connect_timeout: 30
+  video_pool_timeout: 30
+
+openai:
+  default_model: "gpt-5.6-terra"
+  speech_model: "whisper-1"
+  max_output_tokens: 16384
+  verbosity: "low"
+  reasoning_effort: "medium"
+  store_responses: true
+
+openrouter:
+  http_referer: null
+  title: null
+  categories: null
+  timeout_ms: 120000
+
+media:
+  image_generation_model: "qwen/qwen-image-3-pro"
+  image_edit_model: "google/gemini-3.1-flash-image"
+  image_generation_count: 1
+  image_edit_count: 1
+  image_edit_output_format: "png"
+  #video_model: "alibaba/wan-3.0"
+  video_model: "google/veo-3.1-fast"
+  video_resolution: "720p"
+  video_aspect_ratio: null
+  video_duration: null
+  video_generate_audio: null
+  video_size: null
+  video_timeout_seconds: 360
+  video_polling_interval_seconds: 5
+  video_index: 0
+  telegram_image_max_size: 1280
+  telegram_image_jpeg_quality: 88
+
+mysql:
+  # Заполните значения подключения; пароль задаётся MYSQL_ADDON_PASSWORD.
+  host: ""
+  database: ""
+  user: ""
+  port: 3306
+  connection_retries: 10
+  retry_delay_seconds: 5
+  user_ids_table_name: "user_ids"
+  last_session_table_name: "last_session_big_int"
+
+elastic:
+  # URL кластера не содержит секретов и задаётся здесь.
+  url: ""
+  notes_index_name: "user_notes_index"
+  search_top_k: 10
+
+integrations:
+  weather_url: "https://api.open-meteo.com/v1/forecast"
+  weather_request_timeout_seconds: 30
+  yandex_geocoder_url: "https://geocode-maps.yandex.ru/1.x/"
+  yandex_request_timeout_seconds: 10
+  google_search_result_count: 10
+  web_content_request_timeout_seconds: 30
+  web_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"

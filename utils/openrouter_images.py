@@ -21,9 +21,11 @@ from openrouter.components.imagegenerationrequest import (
 )
 
 from core.common_types import GeneratedImage, ImageEditOptions, ImageGenerationOptions
+from core.config import settings
 
-GENERATION_IMAGE_MODEL = "qwen/qwen-image-3-pro"
-EDIT_IMAGE_MODEL = "google/gemini-3.1-flash-image"
+# Совместимые имена для кода, который импортировал старые константы.
+GENERATION_IMAGE_MODEL = settings.media.image_generation_model
+EDIT_IMAGE_MODEL = settings.media.image_edit_model
 
 
 def _image_to_data_url(image: GeneratedImage) -> str:
@@ -85,11 +87,11 @@ async def generate(
     *,
     client: OpenRouter,
 ) -> GeneratedImage:
-    """Генерирует изображение через фиксированную Qwen-модель."""
+    """Генерирует изображение через модель из конфигурации."""
 
     selected_options = options or ImageGenerationOptions()
     response = await client.images.generate_async(
-        model=GENERATION_IMAGE_MODEL,
+        model=settings.media.image_generation_model,
         prompt=prompt,
         n=selected_options.n,
         stream=False,
@@ -97,7 +99,7 @@ async def generate(
     )
     return _decode_image_response(
         response,
-        model=GENERATION_IMAGE_MODEL,
+        model=settings.media.image_generation_model,
         operation="generate",
     )
 
@@ -109,7 +111,7 @@ async def edit(
     *,
     client: OpenRouter,
 ) -> GeneratedImage:
-    """Редактирует изображение через фиксированную Gemini-модель."""
+    """Редактирует изображение через модель из конфигурации."""
 
     selected_options = options or ImageEditOptions()
     input_references: list[ContentPartImageTypedDict] = [
@@ -122,7 +124,7 @@ async def edit(
         )
     ]
     response = await client.images.generate_async(
-        model=EDIT_IMAGE_MODEL,
+        model=settings.media.image_edit_model,
         prompt=instruction,
         input_references=input_references,
         n=selected_options.n,
@@ -131,6 +133,6 @@ async def edit(
     )
     return _decode_image_response(
         response,
-        model=EDIT_IMAGE_MODEL,
+        model=settings.media.image_edit_model,
         operation="edit",
     )

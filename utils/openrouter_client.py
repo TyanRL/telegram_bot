@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar
 
 from openrouter import OpenRouter
 from openrouter import errors as sdk_errors
 
+from core.config import Settings, settings
 from core.common_types import (
     GeneratedImage,
     GeneratedVideo,
@@ -119,14 +119,14 @@ class OpenRouterConfig:
     http_referer: str | None = None
     x_open_router_title: str | None = None
     x_open_router_categories: str | None = None
-    timeout_ms: int = 120_000
-    video_timeout_seconds: float = 360.0
-    video_polling_interval_seconds: float = 5.0
+    timeout_ms: int = settings.openrouter.timeout_ms
+    video_timeout_seconds: float = settings.media.video_timeout_seconds
+    video_polling_interval_seconds: float = settings.media.video_polling_interval_seconds
 
     def __post_init__(self) -> None:
         if not self.api_key.strip():
             raise OpenRouterConfigurationError(
-                "Не задана переменная окружения OPENROUTER_API_KEY"
+                "Не задан секрет OPENROUTER_API_KEY"
             )
         if self.timeout_ms <= 0:
             raise OpenRouterConfigurationError("Таймаут OpenRouter должен быть положительным")
@@ -136,36 +136,24 @@ class OpenRouterConfig:
             )
 
     @classmethod
-    def from_env(cls) -> "OpenRouterConfig":
-        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        if not api_key:
-            raise OpenRouterConfigurationError(
-                "Не задана переменная окружения OPENROUTER_API_KEY"
-            )
-
-        try:
-            timeout_ms = int(os.getenv("OPENROUTER_TIMEOUT_MS", "120000"))
-            video_timeout_seconds = float(
-                os.getenv("OPENROUTER_VIDEO_TIMEOUT_SECONDS", "360")
-            )
-            video_polling_interval_seconds = float(
-                os.getenv("OPENROUTER_VIDEO_POLL_INTERVAL_SECONDS", "5")
-            )
-        except ValueError as exc:
-            raise OpenRouterConfigurationError(
-                "Параметры таймаута OpenRouter должны быть числами"
-            ) from exc
+    def from_settings(cls, app_settings: Settings = settings) -> "OpenRouterConfig":
+        """Создаёт конфигурацию SDK из единого объекта настроек."""
 
         return cls(
-            api_key=api_key,
-            http_referer=os.getenv("OPENROUTER_HTTP_REFERER") or None,
-            x_open_router_title=os.getenv("OPENROUTER_X_OPEN_ROUTER_TITLE") or None,
-            x_open_router_categories=os.getenv("OPENROUTER_X_OPEN_ROUTER_CATEGORIES")
-            or None,
-            timeout_ms=timeout_ms,
-            video_timeout_seconds=video_timeout_seconds,
-            video_polling_interval_seconds=video_polling_interval_seconds,
+            api_key=app_settings.secrets.openrouter_api_key,
+            http_referer=app_settings.openrouter.http_referer,
+            x_open_router_title=app_settings.openrouter.title,
+            x_open_router_categories=app_settings.openrouter.categories,
+            timeout_ms=app_settings.openrouter.timeout_ms,
+            video_timeout_seconds=app_settings.media.video_timeout_seconds,
+            video_polling_interval_seconds=app_settings.media.video_polling_interval_seconds,
         )
+
+    @classmethod
+    def from_env(cls) -> "OpenRouterConfig":
+        """Совместимый алиас: источник настроек теперь находится в ``core.config``."""
+
+        return cls.from_settings()
 
 
 class OpenRouterService:
@@ -181,16 +169,30 @@ class OpenRouterService:
         *,
         client_factory: Callable[..., OpenRouter] = OpenRouter,
     ) -> None:
-        self.config = config or OpenRouterConfig.from_env()
+        self.config = config or OpenRouterConfig.from_settings()
         self._client_factory = client_factory
         self._sdk_client: OpenRouter | None = None
         self._client: OpenRouter | None = None
 
     @classmethod
+    def from_settings(
+        cls,
+        app_settings: Settings = settings,
+        *,
+        client_factory: Callable[..., OpenRouter] = OpenRouter,
+    ) -> "OpenRouterService":
+        return cls(
+            OpenRouterConfig.from_settings(app_settings),
+            client_factory=client_factory,
+        )
+
+    @classmethod
     def from_env(
         cls, *, client_factory: Callable[..., OpenRouter] = OpenRouter
     ) -> "OpenRouterService":
-        return cls(OpenRouterConfig.from_env(), client_factory=client_factory)
+        """Совместимый алиас для старых точек запуска."""
+
+        return cls.from_settings(client_factory=client_factory)
 
     @property
     def started(self) -> bool:
