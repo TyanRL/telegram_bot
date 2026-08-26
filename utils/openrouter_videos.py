@@ -24,7 +24,7 @@ from utils.openrouter_client import (
     OpenRouterVideoFailedError,
 )
 
-DEFAULT_VIDEO_MODEL = "google/veo-3.1-fast"
+DEFAULT_VIDEO_MODEL = "alibaba/wan-3.0"
 TERMINAL_VIDEO_STATUSES = {"failed", "cancelled", "expired"}
 
 

@@ -94,10 +94,11 @@ class ImageEditOptions:
 class VideoGenerationOptions:
     """Параметры запуска и ожидания генерации видео."""
 
-    model: str = "google/veo-3.1-fast"
-    resolution: str = "720p"
+    model: str = "alibaba/wan-3.0"
+    resolution: str = "480p"
     aspect_ratio: str | None = None
-    duration: int | None = None
+    duration: int | None = 30 #для wan-3.0
+    #duration: int | None = None
     generate_audio: bool | None = None
     seed: int | None = None
     size: str | None = None

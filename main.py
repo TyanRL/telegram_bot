@@ -47,7 +47,7 @@ from utils.openrouter_client import OpenRouterService
 from utils.sql import get_admins, in_user_list, init_db
 from utils.yandex_maps import get_address
 
-version="29.0"
+version="29.1"
 
 
 # URL вебхука
