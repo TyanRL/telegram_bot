@@ -97,7 +97,7 @@ class VideoGenerationOptions:
     model: str = "alibaba/wan-3.0"
     resolution: str = "480p"
     aspect_ratio: str | None = None
-    duration: int | None = 30 #для wan-3.0
+    duration: int | None = 15 #для wan-3.0
     #duration: int | None = None
     generate_audio: bool | None = None
     seed: int | None = None
