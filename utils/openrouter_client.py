@@ -120,7 +120,7 @@ class OpenRouterConfig:
     x_open_router_title: str | None = None
     x_open_router_categories: str | None = None
     timeout_ms: int = 120_000
-    video_timeout_seconds: float = 180.0
+    video_timeout_seconds: float = 360.0
     video_polling_interval_seconds: float = 5.0
 
     def __post_init__(self) -> None:
@@ -146,7 +146,7 @@ class OpenRouterConfig:
         try:
             timeout_ms = int(os.getenv("OPENROUTER_TIMEOUT_MS", "120000"))
             video_timeout_seconds = float(
-                os.getenv("OPENROUTER_VIDEO_TIMEOUT_SECONDS", "180")
+                os.getenv("OPENROUTER_VIDEO_TIMEOUT_SECONDS", "360")
             )
             video_polling_interval_seconds = float(
                 os.getenv("OPENROUTER_VIDEO_POLL_INTERVAL_SECONDS", "5")
