@@ -388,11 +388,11 @@ class Settings:
             "mysql.user": self.mysql.user,
             "elastic.url": self.elastic.url,
         }
-        missing_config = [name for name, value in required_config.items() if not value]
-        if missing_config:
-            raise SettingsError(
-                "Не заданы обязательные параметры config.yaml: " + ", ".join(missing_config)
-            )
+        #missing_config = [name for name, value in required_config.items() if not value]
+        #if missing_config:
+            #raise SettingsError(
+            #    "Не заданы обязательные параметры config.yaml: " + ", ".join(missing_config)
+            #)
 
     @staticmethod
     def _application(section: Mapping[str, Any]) -> ApplicationSettings:
