@@ -3,14 +3,16 @@ import base64
 import json
 import logging
 import os
+from dataclasses import dataclass
 from functools import partial
+from typing import Any
 
 from openai import OpenAI
 from openai.types.responses import Response
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.common_types import GeneratedImage, ModelAnswer
+from core.common_types import GeneratedImage, ModelAnswer, ToolResult
 from core.state_and_commands import (
     get_user_model,
     get_voice_recognition_model,
@@ -27,13 +29,31 @@ logger = logging.getLogger(__name__)
 opena_ai_api_key = os.getenv('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=opena_ai_api_key)
 
-MAXIMUM_RECURSION_ANSWER_DEPTH = 10
+MAXIMUM_TOOL_ROUNDS = 10
+# Сохраняем старое имя для внешнего кода, который мог импортировать константу.
+MAXIMUM_RECURSION_ANSWER_DEPTH = MAXIMUM_TOOL_ROUNDS
+
+
+@dataclass(frozen=True, slots=True)
+class _FunctionCall:
+    """Минимальные данные function call, необходимые для continuation API."""
+
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
 
 
 def _normalize_function_args(function_args):
     if isinstance(function_args, str):
         try:
-            return json.loads(function_args)
+            parsed_args = json.loads(function_args)
+            if isinstance(parsed_args, dict):
+                return parsed_args
+            logger.warning(
+                "Аргументы tool call после JSON-декодирования имеют тип %s, ожидается object",
+                type(parsed_args).__name__,
+            )
+            return {}
         except Exception as e:
             logger.warning(
                 "Не удалось распарсить аргументы tool call как JSON: type=%s",
@@ -52,42 +72,126 @@ def _normalize_function_args(function_args):
     return {}
 
 
-def _extract_function_call(response: Response):
+def _extract_function_calls(response: Response) -> list[_FunctionCall]:
     output_items = list(response.output or [])
     logger.info(
         "Responses API output: items=%s",
         [getattr(item, "type", type(item).__name__) for item in output_items],
     )
 
+    function_calls: list[_FunctionCall] = []
     for item in output_items:
         item_type = getattr(item, "type", None)
 
         if item_type in ("function_call", "custom_tool_call"):
             function_call_name = getattr(item, "name", None)
             function_args = getattr(item, "arguments", None)
+            if function_args is None:
+                function_args = getattr(item, "input", None)
+            call_id = getattr(item, "call_id", None)
             logger.info(
-                "Найден function tool call: name=%s, args_type=%s",
+                "Найден function tool call: name=%s, call_id=%s, args_type=%s",
                 function_call_name,
+                call_id,
                 type(function_args).__name__,
             )
-            return function_call_name, _normalize_function_args(function_args)
 
-        if item_type == "tool":
-            tool = getattr(item, "tool", None)
-            function_call_name = getattr(tool, "name", None) if tool else None
-            function_args = getattr(tool, "arguments", None) if tool else None
-            logger.info(
-                "Найден tool call: name=%s, args_type=%s",
-                function_call_name,
-                type(function_args).__name__,
+            if not isinstance(function_call_name, str) or not function_call_name:
+                logger.warning("Пропущен function call без имени")
+                continue
+            if not isinstance(call_id, str) or not call_id:
+                logger.error(
+                    "Пропущен function call '%s' без call_id; продолжение невозможно",
+                    function_call_name,
+                )
+                continue
+
+            function_calls.append(
+                _FunctionCall(
+                    call_id=call_id,
+                    name=function_call_name,
+                    arguments=_normalize_function_args(function_args),
+                )
             )
-            return function_call_name, _normalize_function_args(function_args)
 
-    logger.warning(
-        "В ответе Responses API не найден tool call: item_count=%s",
-        len(output_items),
-    )
-    return None, {}
+    if not function_calls:
+        logger.info(
+            "В ответе Responses API нет function call: item_count=%s",
+            len(output_items),
+        )
+    return function_calls
+
+
+def _response_usage(response: Response) -> tuple[int, int]:
+    """Безопасно извлекает usage из ответа SDK."""
+
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return 0, 0
+
+    input_tokens = getattr(usage, "input_tokens", 0) or 0
+    output_tokens = getattr(usage, "output_tokens", 0) or 0
+    return int(input_tokens), int(output_tokens)
+
+
+def _serialize_tool_output(output: Any) -> str:
+    """Преобразует доменный результат в строку для function_call_output."""
+
+    if isinstance(output, str):
+        return output
+    try:
+        return json.dumps(output, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Не удалось сериализовать результат tool; используется строковое представление"
+        )
+        return str(output)
+
+
+def _failed_tool_result(message: str) -> ToolResult:
+    """Создаёт безопасный результат ошибки без внутренних деталей приложения."""
+
+    return ToolResult({"ok": False, "error": message})
+
+
+async def _execute_tool(
+    registry,
+    function_call: _FunctionCall,
+    tool_ctx: ToolExecutionContext,
+) -> ToolResult:
+    """Выполняет один function call и всегда возвращает модельный результат."""
+
+    handler = registry.get(function_call.name)
+    if handler is None:
+        logger.warning("Неизвестный tool call: %s", function_call.name)
+        return _failed_tool_result(
+            f"Инструмент '{function_call.name}' недоступен в текущей конфигурации."
+        )
+
+    try:
+        result = await handler(tool_ctx, function_call.arguments)
+    except Exception as error:
+        logger.error(
+            "Ошибка в handler '%s': type=%s",
+            function_call.name,
+            type(error).__name__,
+            exc_info=True,
+        )
+        return _failed_tool_result(
+            f"Не удалось выполнить инструмент '{function_call.name}'."
+        )
+
+    if not isinstance(result, ToolResult):
+        logger.error(
+            "Handler '%s' вернул неподдерживаемый тип результата: %s",
+            function_call.name,
+            type(result).__name__,
+        )
+        return _failed_tool_result(
+            f"Инструмент '{function_call.name}' вернул некорректный результат."
+        )
+
+    return result
 
 
 async def get_model_answer(
@@ -99,14 +203,14 @@ async def get_model_answer(
 ) -> ModelAnswer:
     try:
         logger.info(
-            "Запрос к модели: message_count=%s, глубина рекурсии %s",
+            "Запрос к модели: message_count=%s, начальная глубина tool cycle %s",
             len(messages),
             recursion_depth,
         )
 
-        if recursion_depth > MAXIMUM_RECURSION_ANSWER_DEPTH:
-            logger.error("Recursion depth exceeded")
-            return ModelAnswer(None)
+        if recursion_depth > MAXIMUM_TOOL_ROUNDS:
+            logger.error("Tool cycle limit exceeded before request")
+            return ModelAnswer("Не удалось завершить обработку запроса.")
 
         if update.effective_user is None:
             logger.error("User is None")
@@ -121,96 +225,106 @@ async def get_model_answer(
         additional_system_messages: list[dict] = []
         model_name = await get_user_model(update.effective_user.id)
         response = await get_simple_answer(messages, model_name)
+        registry = get_tool_registry()
 
-        if isinstance(response, Response) and response.usage is not None:
-            if hasattr(response.usage, "input_tokens"):
-                context_tokens += response.usage.input_tokens  # type: ignore
-            if hasattr(response.usage, "output_tokens"):
-                completion_tokens += response.usage.output_tokens  # type: ignore
-
-        # Обработка tool-calls Responses API
-        if isinstance(response, Response):
-            function_call_name, function_args_dict = _extract_function_call(response)
-            logger.info(
-                "Результат разбора tool call: name=%s, argument_keys=%s",
-                function_call_name,
-                sorted(function_args_dict),
-            )
-
-            registry = get_tool_registry()
-            if function_call_name and registry.has(function_call_name):
-                tool_ctx = ToolExecutionContext(
-                    update=update,
-                    context=context,
-                    messages=messages,
-                    model_name=model_name,
-                    recursion_depth=recursion_depth,
-                    openrouter_service=openrouter_service,
-                    context_tokens=context_tokens,
-                    completion_tokens=completion_tokens,
-                    additional_system_messages=additional_system_messages,
+        for tool_round in range(MAXIMUM_TOOL_ROUNDS + 1):
+            if not isinstance(response, Response):
+                logger.error(
+                    "Неожиданный тип ответа от get_simple_answer: %s",
+                    type(response).__name__,
                 )
-                handler = registry.get(function_call_name)
-                assert handler is not None
-                try:
-                    result = await handler(tool_ctx, function_args_dict)
-                except Exception as e:
-                    logger.error(
-                        "Ошибка в handler '%s': type=%s",
-                        function_call_name,
-                        type(e).__name__,
-                    )
-                    return ModelAnswer("Произошла ошибка при обработке запроса.")
-
-                context_tokens = result.ctx_token
-                completion_tokens = result.completion_token
-                additional_system_messages = list(result.additional_system_messages)
-
-                if result.recurse:
-                    inner_answer = await get_model_answer(
-                        update,
-                        context,
-                        messages,
-                        recursion_depth + 1,
-                        openrouter_service,
-                    )
-                    context_tokens += inner_answer.ctx_token
-                    completion_tokens += inner_answer.completion_token
-                    return ModelAnswer(
-                        inner_answer.bot_reply,
-                        additional_system_messages + inner_answer.additional_system_messages,
-                        context_tokens,
-                        completion_tokens,
-                    )
                 return ModelAnswer(
-                    result.bot_reply,
+                    "Произошла ошибка при обработке запроса.",
                     additional_system_messages,
                     context_tokens,
                     completion_tokens,
                 )
 
-            if function_call_name:
-                logger.warning(f"Неизвестный tool call: {function_call_name}")
+            input_tokens, output_tokens = _response_usage(response)
+            context_tokens += input_tokens
+            completion_tokens += output_tokens
 
-        # Если функция не вызвалась, возвращаем обычный текстовый ответ:
-        if isinstance(response, Response):
-            bot_reply = (getattr(response, "output_text", None) or "").strip()
-            if bot_reply == "":
-                logger.warning(
-                    "Пустой output_text без обработанного tool call: item_count=%s",
-                    len(list(response.output or [])),
+            function_calls = _extract_function_calls(response)
+            if not function_calls:
+                bot_reply = (getattr(response, "output_text", None) or "").strip()
+                if bot_reply == "":
+                    logger.warning(
+                        "Пустой output_text без function call: item_count=%s",
+                        len(list(response.output or [])),
+                    )
+                    bot_reply = "Произошла ошибка при обработке запроса."
+                else:
+                    logger.info(
+                        "Текстовый ответ модели успешно извлечён: length=%s",
+                        len(bot_reply),
+                    )
+                return ModelAnswer(
+                    bot_reply,
+                    additional_system_messages,
+                    context_tokens,
+                    completion_tokens,
                 )
-                bot_reply = "Произошла ошибка при обработке запроса."
-            else:
-                logger.info("Текстовый ответ модели успешно извлечён: length=%s", len(bot_reply))
-        else:
-            logger.error(
-                "Неожиданный тип ответа от get_simple_answer: %s",
-                type(response).__name__,
-            )
-            bot_reply = "Произошла ошибка при обработке запроса."
 
-        return ModelAnswer(bot_reply, additional_system_messages, context_tokens, completion_tokens)
+            if tool_round >= MAXIMUM_TOOL_ROUNDS:
+                logger.error("Tool cycle limit exceeded: rounds=%s", MAXIMUM_TOOL_ROUNDS)
+                return ModelAnswer(
+                    "Не удалось завершить обработку запроса: превышен лимит вызовов инструментов.",
+                    additional_system_messages,
+                    context_tokens,
+                    completion_tokens,
+                )
+
+            tool_outputs: list[dict[str, str]] = []
+            for function_call in function_calls:
+                logger.info(
+                    "Обработка tool call: name=%s, call_id=%s, argument_keys=%s",
+                    function_call.name,
+                    function_call.call_id,
+                    sorted(function_call.arguments),
+                )
+                tool_ctx = ToolExecutionContext(
+                    update=update,
+                    context=context,
+                    model_name=model_name,
+                    recursion_depth=recursion_depth + tool_round,
+                    openrouter_service=openrouter_service,
+                    context_tokens=context_tokens,
+                    completion_tokens=completion_tokens,
+                )
+                result = await _execute_tool(registry, function_call, tool_ctx)
+                additional_system_messages.extend(result.additional_system_messages)
+                tool_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": function_call.call_id,
+                        "output": _serialize_tool_output(result.output),
+                    }
+                )
+
+            response_id = getattr(response, "id", None)
+            if not isinstance(response_id, str) or not response_id:
+                logger.error("Ответ с function call не содержит response.id")
+                return ModelAnswer(
+                    "Произошла ошибка при продолжении обработки запроса.",
+                    additional_system_messages,
+                    context_tokens,
+                    completion_tokens,
+                )
+
+            # previous_response_id сохраняет reasoning и исходные function call
+            # на стороне Responses API; в input передаются только их результаты.
+            response = await get_simple_answer(
+                tool_outputs,
+                model_name,
+                previous_response_id=response_id,
+            )
+
+        return ModelAnswer(
+            "Не удалось завершить обработку запроса.",
+            additional_system_messages,
+            context_tokens,
+            completion_tokens,
+        )
 
     except Exception as e:
         logger.error("Ошибка при обращении к OpenAI API: type=%s", type(e).__name__)
@@ -236,17 +350,28 @@ def _prepare_openai_value(value):
     return value
 
 
-async def get_simple_answer(messages, model_name) -> Response:
+async def get_simple_answer(
+    messages,
+    model_name,
+    *,
+    previous_response_id: str | None = None,
+) -> Response:
     prepared_messages = _prepare_openai_value(messages)
-    partial_param = partial(
-        openai_client.responses.create,
-        model=model_name,
-        input=prepared_messages,
-        max_output_tokens=16384,
-        tools=TOOLS_SCHEMA,
-        text={"verbosity": "low"},
-        reasoning={"effort": "medium"},
-    )  # type: ignore
+    request_kwargs: dict[str, Any] = {
+        "model": model_name,
+        "input": prepared_messages,
+        "max_output_tokens": 16384,
+        "tools": TOOLS_SCHEMA,
+        "text": {"verbosity": "low"},
+        "reasoning": {"effort": "medium"},
+        # Без сохранённого response нельзя надёжно продолжить reasoning через
+        # previous_response_id после выполнения function call.
+        "store": True,
+    }
+    if previous_response_id is not None:
+        request_kwargs["previous_response_id"] = previous_response_id
+
+    partial_param = partial(openai_client.responses.create, **request_kwargs)  # type: ignore
 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(None, partial_param)

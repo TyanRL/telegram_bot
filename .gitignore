@@ -3,5 +3,6 @@
 /__pycache__/
 /utils/__pycache__/
 /core/__pycache__/
+/tests/__pycache__/
 /core/tool_handlers/__pycache__/
 /.pixi

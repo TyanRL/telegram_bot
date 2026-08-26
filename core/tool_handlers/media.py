@@ -6,7 +6,7 @@ from core.common_types import (
     GeneratedImage,
     ImageEditOptions,
     ImageGenerationOptions,
-    ModelAnswer,
+    ToolResult,
 )
 from core.generation_error_mapper import map_generation_error
 from core.state_and_commands import (
@@ -51,12 +51,11 @@ def _sdk_aspect_ratio(value: object) -> str | None:
     return min(supported, key=lambda name: abs(supported[name] - float(value)))
 
 
-def _answer(ctx: ToolExecutionContext, text: str | None) -> ModelAnswer:
-    return ModelAnswer(
-        text,
-        ctx.additional_system_messages,
-        ctx.context_tokens,
-        ctx.completion_tokens,
+def _answer(ctx: ToolExecutionContext, text: str | None) -> ToolResult:
+    return ToolResult(
+        {"ok": text is not None, "message": text or "Операция не выполнена."},
+        ctx_token=ctx.context_tokens,
+        completion_token=ctx.completion_tokens,
     )
 
 
@@ -65,7 +64,7 @@ async def _report_media_error(
     error: OpenRouterMediaError,
     *,
     context: str,
-) -> ModelAnswer:
+) -> ToolResult:
     mapped = map_generation_error(error, context=context)
     await reply_service_text(ctx.update, mapped.user_message)
     return _answer(ctx, None)
@@ -81,7 +80,7 @@ def _source_image_from_session(session: dict[str, Any]) -> GeneratedImage:
 @register_tool("generate_image")
 async def handle_generate_image(
     ctx: ToolExecutionContext, args: dict[str, Any]
-) -> ModelAnswer:
+) -> ToolResult:
     user_id = ctx.update.effective_user.id  # type: ignore
 
     session = await get_user_image_edit_session(user_id)
@@ -148,7 +147,7 @@ async def handle_generate_image(
 @register_tool("generate_image_from_image")
 async def handle_generate_image_from_image(
     ctx: ToolExecutionContext, args: dict[str, Any]
-) -> ModelAnswer:
+) -> ToolResult:
     user_id = ctx.update.effective_user.id  # type: ignore
 
     session = await get_user_image_edit_session(user_id)
@@ -241,7 +240,7 @@ async def handle_generate_image_from_image(
 @register_tool("generate_video")
 async def handle_generate_video(
     ctx: ToolExecutionContext, args: dict[str, Any]
-) -> ModelAnswer:
+) -> ToolResult:
     user_id = ctx.update.effective_user.id  # type: ignore
     prompt = args.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():

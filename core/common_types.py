@@ -115,6 +115,22 @@ class ModelAnswer:
     recurse: bool = False
 
 
+@dataclass
+class ToolResult:
+    """Результат выполнения инструмента до продолжения Responses API.
+
+    `output` отправляется модели в поле `function_call_output`. Поле
+    `additional_system_messages` предназначено только для фактов, которые
+    нужно сохранить в локальной истории следующего пользовательского хода;
+    текущий ответ модели получает данные исключительно через `output`.
+    """
+
+    output: Any
+    additional_system_messages: list[dict] = field(default_factory=list)
+    ctx_token: int = 0
+    completion_token: int = 0
+
+
 class SafeDict:
     def __init__(self):
         self.lock = asyncio.Lock()

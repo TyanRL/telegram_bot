@@ -1,10 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.common_types import ModelAnswer
+from core.common_types import ToolResult
 from utils.openrouter_client import OpenRouterService
 
 
@@ -14,16 +14,14 @@ class ToolExecutionContext:
 
     update: Update
     context: ContextTypes.DEFAULT_TYPE
-    messages: list[dict]
     model_name: str
     recursion_depth: int
     openrouter_service: OpenRouterService
     context_tokens: int = 0
     completion_tokens: int = 0
-    additional_system_messages: list[dict] = field(default_factory=list)
 
 
-ToolHandler = Callable[[ToolExecutionContext, dict[str, Any]], Awaitable[ModelAnswer]]
+ToolHandler = Callable[[ToolExecutionContext, dict[str, Any]], Awaitable[ToolResult]]
 
 # Описания функций для OpenAI API
 TOOLS_SCHEMA = [
