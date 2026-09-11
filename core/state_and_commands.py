@@ -102,7 +102,7 @@ def get_local_time()->datetime.datetime:
     return local_time
 
 
-voice_recognition_model_name = settings.openai.speech_model
+voice_recognition_model_name = settings.openrouter.speech_model
 def get_voice_recognition_model()->str:
     return voice_recognition_model_name
 
@@ -263,7 +263,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE)-> None:
     user = update.effective_user
     if await in_user_list(user) and user is not None:
         model = await get_user_model(user.id)
-        info=f"Версия бота: {version}, текущая модель: {model}, модель для распознавания голоса: {voice_recognition_model_name}.\nВозможности: текущая погода, прогноз погоды на неделю, генерация и редактрирование картинок, генерация видео, распознавание голосовых сообщений,  распознавание картинок, поиск в интернете с помощью Google."
+        info=f"Версия бота: {version}, текущая модель: {model}, распознавание голоса: {voice_recognition_model_name} через OpenRouter.\nВозможности: текущая погода, прогноз погоды на неделю, генерация и редактирование картинок, генерация видео, распознавание голосовых сообщений, распознавание картинок, поиск в интернете с помощью Google."
         await reply_service_text(update,info)
     else:
         await reply_service_text(update,"У вас нет прав на эту команду.")

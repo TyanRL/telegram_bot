@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -119,6 +121,7 @@ class OpenRouterConfig:
     http_referer: str | None = None
     x_open_router_title: str | None = None
     x_open_router_categories: str | None = None
+    speech_model: str = settings.openrouter.speech_model
     timeout_ms: int = settings.openrouter.timeout_ms
     video_timeout_seconds: float = settings.media.video_timeout_seconds
     video_polling_interval_seconds: float = settings.media.video_polling_interval_seconds
@@ -144,6 +147,7 @@ class OpenRouterConfig:
             http_referer=app_settings.openrouter.http_referer,
             x_open_router_title=app_settings.openrouter.title,
             x_open_router_categories=app_settings.openrouter.categories,
+            speech_model=app_settings.openrouter.speech_model,
             timeout_ms=app_settings.openrouter.timeout_ms,
             video_timeout_seconds=app_settings.media.video_timeout_seconds,
             video_polling_interval_seconds=app_settings.media.video_polling_interval_seconds,
@@ -250,6 +254,33 @@ class OpenRouterService:
             raise
         except Exception as exc:
             raise self._translate_exception(exc, operation) from exc
+
+    async def transcribe_audio(self, audio_filename: str) -> str:
+        """Распознаёт Telegram OGG/Opus через Qwen3 ASR в OpenRouter."""
+        client = self._require_client()
+
+        async def transcribe() -> str:
+            # STT принимает исходные байты в base64, без префикса data URI.
+            # Чтение и кодирование файла выносим из цикла обработки Telegram.
+            def encode_audio() -> str:
+                content = Path(audio_filename).read_bytes()
+                if not content:
+                    raise ValueError("Аудиофайл пуст")
+                return base64.b64encode(content).decode("ascii")
+
+            audio_data = await asyncio.to_thread(encode_audio)
+            response = await client.stt.create_transcription_async(
+                model=self.config.speech_model,
+                input_audio={"data": audio_data, "format_": "ogg"},
+                response_format="json",
+            )
+            # Язык определяется автоматически; пустой текст обрабатывает handler.
+            if not isinstance(response.text, str):
+                raise ValueError("Ответ STT не содержит текст")
+            return response.text.strip()
+
+        # Сохраняем единое преобразование таймаутов и ошибок провайдера.
+        return await self._run("transcription", transcribe)
 
     async def generate_image(
         self,

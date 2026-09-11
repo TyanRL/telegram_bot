@@ -375,16 +375,3 @@ async def get_simple_answer(
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(None, partial_param)
     return response
-
-
-def transcribe_audio(audio_filename):
-    try:
-        transcription = openai_client.audio.transcriptions.create(
-            model=settings.openai.speech_model,
-            file=open(audio_filename, 'rb')
-        )
-        recognized_text = transcription.text
-    except Exception as e:
-        logger.error("Ошибка при распознавании речи: " + str(e))
-        return
-    return recognized_text
