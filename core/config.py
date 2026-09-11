@@ -167,7 +167,6 @@ class TelegramSettings:
 @dataclass(frozen=True, slots=True)
 class OpenAISettings:
     default_model: str = "gpt-5.6-terra"
-    speech_model: str = "whisper-1"
     max_output_tokens: int = 16_384
     verbosity: str = "low"
     reasoning_effort: str = "medium"
@@ -176,6 +175,7 @@ class OpenAISettings:
 
 @dataclass(frozen=True, slots=True)
 class OpenRouterSettings:
+    speech_model: str = "qwen/qwen3-asr-1.7b"
     http_referer: str | None = None
     title: str | None = None
     categories: str | None = None
@@ -458,7 +458,6 @@ class Settings:
         defaults = OpenAISettings()
         return OpenAISettings(
             default_model=_value(section, "default_model", defaults.default_model, str),
-            speech_model=_value(section, "speech_model", defaults.speech_model, str),
             max_output_tokens=_value(section, "max_output_tokens", defaults.max_output_tokens, int),
             verbosity=_value(section, "verbosity", defaults.verbosity, str),
             reasoning_effort=_value(section, "reasoning_effort", defaults.reasoning_effort, str),
@@ -469,6 +468,7 @@ class Settings:
     def _openrouter(section: Mapping[str, Any]) -> OpenRouterSettings:
         defaults = OpenRouterSettings()
         return OpenRouterSettings(
+            speech_model=_value(section, "speech_model", defaults.speech_model, str),
             http_referer=_optional_string(section, "http_referer", defaults.http_referer),
             title=_optional_string(section, "title", defaults.title),
             categories=_optional_string(section, "categories", defaults.categories),

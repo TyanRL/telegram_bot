@@ -18,7 +18,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 
 from core.config import settings
-from core.openai_api import get_model_answer, transcribe_audio
+from core.openai_api import get_model_answer
 from core.state_and_commands import (
     TELEGRAM_BOT_TOKEN,
     add_location_button,
@@ -234,7 +234,7 @@ async def handle_message_inner(
 
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка голосовых сообщений и распознавание текста через OpenAI Whisper API."""
+    """Обработка голосовых сообщений и распознавание текста через Qwen3 ASR в OpenRouter."""
     user = update.effective_user
     if update.message is None:
         return
@@ -259,18 +259,22 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"Временный файл загружен: {temp_file.name}")
 
         try:
-            # Распознавание речи с использованием OpenAI
-            recognized_text=transcribe_audio(temp_file.name)
+            # Используем общий SDK-клиент; await не блокирует другие обновления бота.
+            service = context.application.bot_data.get("openrouter_service")
+            if not isinstance(service, OpenRouterService):
+                raise RuntimeError("OpenRouter service не инициализирован")
+            recognized_text = await service.transcribe_audio(temp_file.name)
             
-            if recognized_text=="":
-                 await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
-                 return
-            await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
+            # Пустую расшифровку не отправляем в историю и языковую модель.
+            if not recognized_text:
+                await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
+                return
+            await send_big_text(update, f"Распознанный текст: \n {recognized_text}")
             await handle_message_inner(update, context, recognized_text) 
             if recognized_text:
                 logger.info("Распознанный текст от пользователя %s: length=%s", user.id, len(recognized_text))
         except Exception as e:
-            logger.error(f"Ошибка при распознавании текста через OpenAI: {e}")
+            logger.error("Ошибка распознавания через OpenRouter: type=%s", type(e).__name__)
             await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
 
 async def not_authorized_message(update, user):

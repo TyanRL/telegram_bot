@@ -77,3 +77,24 @@ finally:
 Пользовательские сообщения формируются через `map_generation_error`.
 
 Логи не содержат base64, полные ответы OpenRouter или содержимое промптов.
+
+## Распознавание голосовых (версия 30.5)
+
+Голосовые сообщения распознаёт `qwen/qwen3-asr-1.7b` через OpenRouter.
+Модель задаётся в `config.yaml` → `openrouter.speech_model`; ключ — существующий
+`OPENROUTER_API_KEY`. Параметр `openai.speech_model` удалён. OpenAI продолжает
+использоваться для текстовых ответов, поэтому его ключ по-прежнему нужен.
+
+Установите зависимости из `requirements.txt`: для STT используется проверенная
+версия SDK `openrouter>=1.1.137,<2`. При запуске через Pixi обновите окружение
+командой `pixi install` (старый lock-файл уже не соответствует манифесту).
+
+`await service.transcribe_audio(path)` передаёт Telegram OGG/Opus как base64
+через `client.stt.create_transcription_async` в `/api/v1/audio/transcriptions`.
+Язык определяется автоматически. Используются общий клиент и таймаут
+`openrouter.timeout_ms`. Чтение файла вынесено в рабочий поток; сетевой запрос
+асинхронный. Пустой ответ и ошибки не передаются в диалог. Автоматического
+возврата к Whisper нет. Команда `/info` показывает новую модель и провайдера.
+
+Контракт API: https://openrouter.ai/docs/guides/overview/multimodal/stt
+Модель: https://openrouter.ai/qwen/qwen3-asr-1.7b

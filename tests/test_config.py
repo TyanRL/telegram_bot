@@ -43,7 +43,7 @@ secrets:
         loaded = self._load("{}")
 
         self.assertEqual(loaded.application.version, "29.3")
-        self.assertEqual(loaded.openai.speech_model, "whisper-1")
+        self.assertEqual(loaded.openrouter.speech_model, "qwen/qwen3-asr-1.7b")
         self.assertEqual(loaded.media.video_timeout_seconds, 360.0)
 
     def test_invalid_timeout_is_rejected(self) -> None:
