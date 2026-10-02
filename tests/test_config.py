@@ -45,6 +45,10 @@ secrets:
         self.assertEqual(loaded.application.version, "29.3")
         self.assertEqual(loaded.openai.speech_model, "whisper-1")
         self.assertEqual(loaded.media.video_timeout_seconds, 360.0)
+        self.assertEqual(
+            loaded.media.image_generation_model, "black-forest-labs/flux-3-image"
+        )
+        self.assertEqual(loaded.media.image_edit_model, "black-forest-labs/flux-3-image")
 
     def test_invalid_timeout_is_rejected(self) -> None:
         with self.assertRaises(SettingsError):

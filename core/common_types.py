@@ -64,30 +64,28 @@ class GeneratedVideo:
 
 @dataclass(frozen=True, slots=True)
 class ImageGenerationOptions:
-    """Параметры операции text-to-image."""
+    """Параметры операции text-to-image.
+
+    Поддерживается только набор, разрешённый FLUX.3 через Images API:
+    `aspect_ratio`, `resolution`, `seed` и `n`.
+    """
 
     aspect_ratio: str | None = None
     resolution: str | None = None
-    output_format: str | None = None
-    output_compression: int | None = None
-    quality: str | None = None
-    background: str | None = None
-    size: str | None = None
     seed: int | None = None
     n: int = settings.media.image_generation_count
 
 
 @dataclass(frozen=True, slots=True)
 class ImageEditOptions:
-    """Параметры операции редактирования изображения."""
+    """Параметры операции редактирования изображения (image-to-image).
+
+    Поддерживается только набор, разрешённый FLUX.3 через Images API:
+    `aspect_ratio`, `resolution`, `seed` и `n`.
+    """
 
     aspect_ratio: str | None = None
     resolution: str | None = None
-    output_format: str = settings.media.image_edit_output_format
-    output_compression: int | None = None
-    quality: str | None = None
-    background: str | None = None
-    size: str | None = None
     seed: int | None = None
     n: int = settings.media.image_edit_count
 

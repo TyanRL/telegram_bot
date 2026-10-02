@@ -2,6 +2,10 @@
 
 Этот модуль работает только с SDK-клиентом, переданным сервисом. Data URL
 создаётся здесь и используется исключительно в `input_references`.
+
+Для FLUX.3 (`black-forest-labs/flux-3-image`) Images API принимает только
+`aspect_ratio`, `resolution`, `seed` и `n` (плюс `input_references` для
+image-to-image), поэтому прочие параметры не отправляются.
 """
 
 from __future__ import annotations
@@ -12,13 +16,6 @@ from typing import Any, cast
 
 from openrouter import OpenRouter
 from openrouter.components.contentpartimage import ContentPartImageTypedDict
-from openrouter.components.imagegenerationrequest import (
-    ImageGenerationRequestAspectRatio,
-    ImageGenerationRequestBackground,
-    ImageGenerationRequestOutputFormat,
-    ImageGenerationRequestQuality,
-    ImageGenerationRequestResolution,
-)
 
 from core.common_types import GeneratedImage, ImageEditOptions, ImageGenerationOptions
 from core.config import settings
@@ -36,16 +33,11 @@ def _image_to_data_url(image: GeneratedImage) -> str:
 def _sdk_image_options(
     options: ImageGenerationOptions | ImageEditOptions,
 ) -> dict[str, Any]:
-    """Приводит доменные строки к типам enum-like, объявленным SDK."""
+    """Оставляет только параметры, поддерживаемые FLUX.3 Images API."""
 
     return {
-        "aspect_ratio": cast(ImageGenerationRequestAspectRatio | None, options.aspect_ratio),
-        "resolution": cast(ImageGenerationRequestResolution | None, options.resolution),
-        "output_format": cast(ImageGenerationRequestOutputFormat | None, options.output_format),
-        "output_compression": options.output_compression,
-        "quality": cast(ImageGenerationRequestQuality | None, options.quality),
-        "background": cast(ImageGenerationRequestBackground | None, options.background),
-        "size": options.size,
+        "aspect_ratio": options.aspect_ratio,
+        "resolution": options.resolution,
         "seed": options.seed,
     }
 
@@ -94,7 +86,6 @@ async def generate(
         model=settings.media.image_generation_model,
         prompt=prompt,
         n=selected_options.n,
-        stream=False,
         **_sdk_image_options(selected_options),
     )
     return _decode_image_response(
@@ -111,7 +102,11 @@ async def edit(
     *,
     client: OpenRouter,
 ) -> GeneratedImage:
-    """Редактирует изображение через модель из конфигурации."""
+    """Редактирует изображение через модель из конфигурации.
+
+    Редактирование выполняется как image-to-image: исходное изображение
+    передаётся data URL'ом в `input_references`, а инструкция — в `prompt`.
+    """
 
     selected_options = options or ImageEditOptions()
     input_references: list[ContentPartImageTypedDict] = [
@@ -128,7 +123,6 @@ async def edit(
         prompt=instruction,
         input_references=input_references,
         n=selected_options.n,
-        stream=False,
         **_sdk_image_options(selected_options),
     )
     return _decode_image_response(

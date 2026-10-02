@@ -55,11 +55,10 @@ openrouter:
   timeout_ms: 120000
 
 media:
-  image_generation_model: "qwen/qwen-image-3-pro"
-  image_edit_model: "google/gemini-3.1-flash-image"
+  image_generation_model: "black-forest-labs/flux-3-image"
+  image_edit_model: "black-forest-labs/flux-3-image"
   image_generation_count: 1
   image_edit_count: 1
-  image_edit_output_format: "png"
   #video_model: "alibaba/wan-3.0"
   video_model: "google/veo-3.1-fast"
   video_resolution: "720p"

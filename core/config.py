@@ -184,11 +184,10 @@ class OpenRouterSettings:
 
 @dataclass(frozen=True, slots=True)
 class MediaSettings:
-    image_generation_model: str = "qwen/qwen-image-3-pro"
-    image_edit_model: str = "google/gemini-3.1-flash-image"
+    image_generation_model: str = "black-forest-labs/flux-3-image"
+    image_edit_model: str = "black-forest-labs/flux-3-image"
     image_generation_count: int = 1
     image_edit_count: int = 1
-    image_edit_output_format: str = "png"
     video_model: str = "alibaba/wan-3.0"
     video_resolution: str = "480p"
     video_aspect_ratio: str | None = None
@@ -483,7 +482,6 @@ class Settings:
             image_edit_model=_value(section, "image_edit_model", defaults.image_edit_model, str),
             image_generation_count=_value(section, "image_generation_count", defaults.image_generation_count, int),
             image_edit_count=_value(section, "image_edit_count", defaults.image_edit_count, int),
-            image_edit_output_format=_value(section, "image_edit_output_format", defaults.image_edit_output_format, str),
             video_model=_value(section, "video_model", defaults.video_model, str),
             video_resolution=_value(section, "video_resolution", defaults.video_resolution, str),
             video_aspect_ratio=_optional_string(section, "video_aspect_ratio", defaults.video_aspect_ratio),
