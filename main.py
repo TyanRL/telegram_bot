@@ -18,7 +18,11 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 
 from core.config import settings
-from core.openai_api import get_model_answer, transcribe_audio
+from core.openai_api import (
+    get_model_answer,
+    transcribe_audio,
+    verify_default_model_available,
+)
 from core.state_and_commands import (
     TELEGRAM_BOT_TOKEN,
     add_location_button,
@@ -385,6 +389,7 @@ async def main():
     set_bot_version(version)
     settings.require_runtime_secrets()
     init_db()
+    await verify_default_model_available()
     openrouter_service = OpenRouterService.from_settings(settings)
 
     async with openrouter_service:

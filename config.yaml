@@ -41,7 +41,7 @@ telegram:
   video_pool_timeout: 30
 
 openai:
-  default_model: "gpt-6-Sol"
+  default_model: "gpt-6.1-sol"
   speech_model: "whisper-1"
   max_output_tokens: 16384
   verbosity: "low"

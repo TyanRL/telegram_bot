@@ -53,6 +53,10 @@ def get_OpenAI_Models(model: str) -> OpenAI_Models:
     # Если не найдено, возвращается модель по умолчанию
     return OpenAI_Models.DEFAULT_MODEL
 
+# проверяет, что имя модели входит в перечень доступных
+def is_supported_model(model: str) -> bool:
+    return any(m.value == model for m in OpenAI_Models)
+
 # сохраняет название модели в строковом виде
 async def set_user_model(user_id:int, model:OpenAI_Models)->None:
     await user_model.set(user_id, model.value)

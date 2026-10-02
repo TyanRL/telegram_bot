@@ -2,7 +2,13 @@ import logging
 from typing import Any
 
 from core.common_types import ToolResult
-from core.state_and_commands import get_OpenAI_Models, reply_service_text, set_user_model
+from core.state_and_commands import (
+    OpenAI_Models,
+    get_OpenAI_Models,
+    is_supported_model,
+    reply_service_text,
+    set_user_model,
+)
 from core.tool_registry import register_tool, ToolExecutionContext
 
 logger = logging.getLogger(__name__)
@@ -11,6 +17,24 @@ logger = logging.getLogger(__name__)
 @register_tool("change_model")
 async def handle_change_model(ctx: ToolExecutionContext, args: dict[str, Any]) -> ToolResult:
     new_model_name_str = args["model"]
+    if not is_supported_model(new_model_name_str):
+        available_models = ", ".join(model.value for model in OpenAI_Models)
+        error_message = (
+            f"Модель '{new_model_name_str}' недоступна. "
+            f"Доступные модели: {available_models}."
+        )
+        logger.warning(
+            "Попытка переключения на недоступную модель: model=%s, доступные: %s",
+            new_model_name_str,
+            available_models,
+        )
+        await reply_service_text(ctx.update, error_message)
+        return ToolResult(
+            {"ok": False, "error": error_message},
+            ctx_token=ctx.context_tokens,
+            completion_token=ctx.completion_tokens,
+        )
+
     new_model_name = get_OpenAI_Models(new_model_name_str)
     if new_model_name_str != ctx.model_name:
         await set_user_model(ctx.update.effective_user.id, new_model_name) # type: ignore

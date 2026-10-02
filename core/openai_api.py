@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
-from openai import OpenAI
+from openai import APIError, NotFoundError, OpenAI
 from openai.types.responses import Response
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -153,6 +153,45 @@ def _failed_tool_result(message: str) -> ToolResult:
     return ToolResult({"ok": False, "error": message})
 
 
+_ERROR_MESSAGE_LOG_LIMIT = 2000
+
+
+def _describe_api_error(error: Exception, model: str | None) -> str:
+    """Собирает диагностическую строку об ошибке для логов.
+
+    Достаёт из исключений OpenAI SDK статус, код и параметр, чтобы
+    причина сбоя (например, 404 model_not_found) была видна в логах.
+    В SDK v2 атрибуты code/param у исключений не заполняются, поэтому
+    значения дополнительно извлекаются из body ответа.
+    """
+
+    parts = [f"type={type(error).__name__}", f"model={model or 'unknown'}"]
+
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        parts.append(f"status_code={status_code}")
+
+    error_code = getattr(error, "code", None)
+    error_param = getattr(error, "param", None)
+    error_body = getattr(error, "body", None)
+    body_error = error_body.get("error") if isinstance(error_body, dict) else None
+    if isinstance(body_error, dict):
+        error_code = error_code or body_error.get("code")
+        error_param = error_param or body_error.get("param")
+
+    if error_code:
+        parts.append(f"code={error_code}")
+    if error_param:
+        parts.append(f"param={error_param}")
+
+    message = str(error).strip() or "<без описания>"
+    if len(message) > _ERROR_MESSAGE_LOG_LIMIT:
+        message = message[:_ERROR_MESSAGE_LOG_LIMIT] + "…<обрезано>"
+    parts.append(f"message={message}")
+
+    return ", ".join(parts)
+
+
 async def _execute_tool(
     registry,
     function_call: _FunctionCall,
@@ -201,11 +240,7 @@ async def get_model_answer(
     openrouter_service: OpenRouterService | None = None,
 ) -> ModelAnswer:
     try:
-        logger.info(
-            "Запрос к модели: message_count=%s, начальная глубина tool cycle %s",
-            len(messages),
-            recursion_depth,
-        )
+        model_name: str | None = None
 
         if recursion_depth > MAXIMUM_TOOL_ROUNDS:
             logger.error("Tool cycle limit exceeded before request")
@@ -223,6 +258,12 @@ async def get_model_answer(
         completion_tokens = 0
         additional_system_messages: list[dict] = []
         model_name = await get_user_model(update.effective_user.id)
+        logger.info(
+            "Запрос к модели: model=%s, message_count=%s, начальная глубина tool cycle %s",
+            model_name,
+            len(messages),
+            recursion_depth,
+        )
         response = await get_simple_answer(messages, model_name)
         registry = get_tool_registry()
 
@@ -326,8 +367,50 @@ async def get_model_answer(
         )
 
     except Exception as e:
-        logger.error("Ошибка при обращении к OpenAI API: type=%s", type(e).__name__)
+        logger.error(
+            "Ошибка при обращении к OpenAI API: %s",
+            _describe_api_error(e, model_name),
+            exc_info=not isinstance(e, APIError),
+        )
         return ModelAnswer("Произошла ошибка при обработке запроса.")
+
+
+async def verify_default_model_available() -> bool:
+    """Проверяет доступность модели по умолчанию при старте бота.
+
+    Возвращает False только при явной недоступности модели (404), когда
+    каждый запрос гарантированно завершится ошибкой. Временные сбои
+    сети не блокируют запуск.
+    """
+
+    model_name = settings.openai.default_model
+    try:
+        await asyncio.to_thread(openai_client.models.retrieve, model_name)
+    except NotFoundError:
+        logger.error(
+            "Модель по умолчанию недоступна для OpenAI API: model=%s. "
+            "Проверьте openai.default_model в config.yaml: модель не существует "
+            "или недоступна для текущего API-ключа.",
+            model_name,
+        )
+        return False
+    except APIError as error:
+        logger.warning(
+            "Не удалось проверить модель по умолчанию, запуск продолжается: %s",
+            _describe_api_error(error, model_name),
+        )
+        return True
+    except Exception as error:
+        logger.warning(
+            "Не удалось проверить модель по умолчанию, запуск продолжается: "
+            "type=%s, message=%s",
+            type(error).__name__,
+            str(error)[:500],
+        )
+        return True
+
+    logger.info("Модель по умолчанию доступна: model=%s", model_name)
+    return True
 
 
 def _prepare_openai_value(value):
@@ -356,6 +439,13 @@ async def get_simple_answer(
     previous_response_id: str | None = None,
 ) -> Response:
     prepared_messages = _prepare_openai_value(messages)
+    logger.info(
+        "Responses API запрос: model=%s, input_type=%s, input_items=%s, previous_response_id=%s",
+        model_name,
+        type(prepared_messages).__name__,
+        len(prepared_messages) if isinstance(prepared_messages, list) else "-",
+        previous_response_id,
+    )
     request_kwargs: dict[str, Any] = {
         "model": model_name,
         "input": prepared_messages,
