@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 from openrouter import OpenRouter
 from openrouter.components.contentpartimage import ContentPartImageTypedDict
@@ -96,7 +96,7 @@ async def generate(
 
 
 async def edit(
-    source_image: GeneratedImage,
+    source_image: GeneratedImage | Sequence[GeneratedImage],
     instruction: str,
     options: ImageEditOptions | None = None,
     *,
@@ -109,14 +109,25 @@ async def edit(
     """
 
     selected_options = options or ImageEditOptions()
+    selected_images = (
+        [source_image]
+        if isinstance(source_image, GeneratedImage)
+        else list(source_image)
+    )
+    if not selected_images:
+        raise ValueError("Для редактирования нужно хотя бы одно исходное изображение")
+    if len(selected_images) > 10:
+        raise ValueError("Images API поддерживает не более 10 input_references")
+
     input_references: list[ContentPartImageTypedDict] = [
         cast(
             ContentPartImageTypedDict,
             {
                 "type": "image_url",
-                "image_url": {"url": _image_to_data_url(source_image)},
+                "image_url": {"url": _image_to_data_url(image)},
             },
         )
+        for image in selected_images
     ]
     response = await client.images.generate_async(
         model=settings.media.image_edit_model,

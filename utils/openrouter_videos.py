@@ -6,7 +6,7 @@ import asyncio
 import base64
 import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 from openrouter import OpenRouter
 from openrouter.components.contentpartimage import ContentPartImageTypedDict
@@ -56,7 +56,7 @@ def _write_video_file(content: bytes, suffix: str) -> Path:
 
 async def generate(
     prompt: str,
-    reference_image: GeneratedImage | None = None,
+    reference_image: GeneratedImage | Sequence[GeneratedImage] | None = None,
     options: VideoGenerationOptions | None = None,
     *,
     client: OpenRouter,
@@ -66,14 +66,22 @@ async def generate(
     selected_options = options or VideoGenerationOptions()
     input_references: list[ContentPartImageTypedDict] | None = None
     if reference_image is not None:
+        reference_images = (
+            [reference_image]
+            if isinstance(reference_image, GeneratedImage)
+            else list(reference_image)
+        )
+        if not reference_images:
+            raise ValueError("Список изображений для видео не должен быть пустым")
         input_references = [
             cast(
                 ContentPartImageTypedDict,
                 {
                     "type": "image_url",
-                    "image_url": {"url": _image_to_data_url(reference_image)},
+                    "image_url": {"url": _image_to_data_url(image)},
                 },
             )
+            for image in reference_images
         ]
 
     job = await client.video_generation.generate_async(

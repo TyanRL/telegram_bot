@@ -1,11 +1,8 @@
 import asyncio
-import base64
 import logging
-import mimetypes
 import tempfile
 
 from aiohttp import web
-from PIL import Image
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -25,6 +22,7 @@ from core.openai_api import (
 )
 from core.state_and_commands import (
     TELEGRAM_BOT_TOKEN,
+    append_user_image_to_session,
     add_location_button,
     add_user,
     get_all_histories,
@@ -41,10 +39,13 @@ from core.state_and_commands import (
     send_service_notification,
     set_bot_version,
     set_session_info,
-    set_user_image_edit_session,
     start,
 )
-from core.tool_helpers import generated_image_from_session_dict
+from core.tool_helpers import (
+    generated_image_from_session_dict,
+    get_session_images,
+    normalize_image_for_session,
+)
 from utils.elastic import get_all_user_notes
 from utils.openrouter_client import OpenRouterService
 from utils.sql import get_admins, in_user_list, init_db
@@ -90,19 +91,47 @@ async def get_bot_reply(
         session = await get_user_image_edit_session(user.id)
         
         # Получение истории сообщений пользователя
-        if session is not None and session.get("current_image") is not None:
+        session_images = get_session_images(session) if session is not None else []
+        if session_images:
             try:
-                # Берем current_image из visual session
-                image_dict = session["current_image"]
-                image = generated_image_from_session_dict(image_dict)
+                recent_session_images = session_images
+                if len(session_images) > settings.media.max_session_images:
+                    recent_session_images = session_images[-settings.media.max_session_images:]
+                start_index = len(session_images) - len(recent_session_images) + 1
+                images = [
+                    generated_image_from_session_dict(image_dict)
+                    for image_dict in recent_session_images
+                ]
+                image_labels = ", ".join(
+                    f"№{index}"
+                    for index in range(start_index, len(session_images) + 1)
+                )
+                visual_user_text = (
+                    f"{user_message}\n\n"
+                    f"Вложения visual session пронумерованы по порядку: {image_labels}. "
+                    "Для инструментов генерации можно указать номера картинок; "
+                    "без номеров используются все."
+                )
+                stored_history = _trim_history(
+                    await user_histories.get(user.id, [])
+                    + [{"role": "user", "content": visual_user_text}]
+                )
                 history = await user_histories.get(user.id, [])
+                history = list(history)
                 history.append({
                     "role": "user",
                     "content": [
-                                {"type": "input_text", "text": user_message},
-                                {"type": "input_image", "image": image},
+                        {
+                            "type": "input_text",
+                            "text": visual_user_text,
+                        },
+                        *[
+                            {"type": "input_image", "image": image}
+                            for image in images
+                        ],
                     ],
                 })
+                history = _trim_history(history)
             except Exception as e:
                 logger.error(
                     "Ошибка при обработке запроса с изображением: type=%s",
@@ -112,6 +141,7 @@ async def get_bot_reply(
         else:
             # Получаем или создаем историю сообщений для пользователя
             history = await get_history(user.id, user_message)
+            stored_history = history
     
    
         system_message= get_system_message()
@@ -130,18 +160,18 @@ async def get_bot_reply(
         )
         
         
-        # Добавляем дополнительную информацию в историю
+        # Добавляем дополнительную информацию в текстовую историю пользователя.
         if m_a.additional_system_messages is not None:
             for message in m_a.additional_system_messages:
-                history.append(message)
+                stored_history.append(message)
                 logger.info("В историю добавлена системная информация: type=%s", type(message).__name__)
         # Добавляем ответ бота в историю
         if m_a.bot_reply is not None:
-            history.append({"role": "assistant", "content": m_a.bot_reply})
+            stored_history.append({"role": "assistant", "content": m_a.bot_reply})
         
         # Обновляем историю пользователя
-        await user_histories.set(user.id, history)
-        logger.info("История пользователя обновлена: items=%s", len(history))
+        await user_histories.set(user.id, stored_history)
+        logger.info("История пользователя обновлена: items=%s", len(stored_history))
         
         return m_a.bot_reply, f"Токенов: использовано - {m_a.ctx_token}, сгенерировано - {m_a.completion_token}."
 
@@ -153,6 +183,12 @@ async def get_history(user_id, user_message):
     history = await user_histories.get(user_id, [])
     # Добавляем новое сообщение пользователя в историю
     history.append({"role": "user", "content": user_message})
+
+    return _trim_history(history)
+
+
+def _trim_history(history: list[dict]) -> list[dict]:
+    """Ограничивает историю последними сообщениями, сохраняя системные записи."""
 
     # Разделяем историю на системные и прочие сообщения
     system_messages = [m for m in history if m["role"] == "system"]
@@ -167,7 +203,9 @@ async def get_history(user_id, user_message):
         allowed_other_count = 0
 
     # Если нужно урезать список прочих сообщений, оставляем последние allowed_other_count
-    if len(other_messages) > allowed_other_count:
+    if allowed_other_count == 0:
+        other_messages = []
+    elif len(other_messages) > allowed_other_count:
         other_messages = other_messages[-allowed_other_count:]
 
     # Снова объединяем историю, сохранив системные сообщения на месте
@@ -310,55 +348,43 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         if update.effective_user is None:
             return
-        
-        # Проверяем наличие активной visual session
-        existing_session = await get_user_image_edit_session(update.effective_user.id)
-        if existing_session is not None:
-            await reply_service_text(update,"У вас уже есть активная сессия редактирования изображения. Чтобы начать работу с новой картинкой, выполните /reset.")
+        user = update.effective_user
+        if not await in_user_list(user):
+            await not_authorized_message(update, user)
             return
-        
-        # Получаем файл изображения
-        photo_file = await update.message.photo[-1].get_file()
-        photo_path = f'user_{update.effective_user.id}_image.jpg'
-        await photo_file.download_to_drive(photo_path)
+        photo = update.message.photo
+        document = getattr(update.message, "document", None)
+        document_mime_type = getattr(document, "mime_type", None)
+        if photo:
+            image_file = await photo[-1].get_file()
+        elif (
+            document is not None
+            and isinstance(document_mime_type, str)
+            and document_mime_type.startswith("image/")
+        ):
+            image_file = await document.get_file()
+        else:
+            await reply_service_text(update, "В сообщении не найдено изображение.")
+            return
 
-        # Определяем MIME-тип
-        img_type, _ = mimetypes.guess_type(photo_path)
-        if img_type is None:
-            img_type = "application/octet-stream"  # На случай, если тип определить не удалось
-        with Image.open(photo_path) as img:
-            width, height = img.size
-        # Кодируем изображение в base64 для OpenAI
-        with open(photo_path, 'rb') as image_file:
-            image_content = image_file.read()
-            # Преобразование в Base64
-            img_b64_bytes = base64.b64encode(image_content)
-            # Преобразование в строку
-            img_b64_str = img_b64_bytes.decode("utf-8")
-            image_dict = {"image_type": img_type, 
-                          "image": img_b64_str, 
-                          "width": width,
-                          "height": height,
-                          "aspect_ratio": width / height,}
-            
-            # Создаем новую visual session
-            from datetime import datetime
-            session = {
-                "original_image": image_dict,
-                "current_image": image_dict,
-                "source_kind": "uploaded",
-                "history": [
-                    {
-                        "step": 0,
-                        "kind": "upload",
-                        "prompt": None,
-                        "created_at": datetime.now().isoformat()
-                    }
-                ]
-            }
-            await set_user_image_edit_session(update.effective_user.id, session)
-            
-        await reply_service_text(update,"Изображение загружено и стало текущей основой для редактирования. Можешь задать вопрос по нему, попросить изменить/стилизовать его или сделать видео на основе. Для последовательных правок не нужно повторно отправлять картинку.")
+        image_content = bytes(await image_file.download_as_bytearray())
+        image_dict = normalize_image_for_session(image_content)
+
+        image_number = await append_user_image_to_session(
+            user.id,
+            image_dict,
+            "uploaded",
+        )
+
+        if update.message.caption and update.message.caption.strip():
+            await handle_message_inner(update, context, update.message.caption)
+        else:
+            await reply_service_text(
+                update,
+                f"Изображение №{image_number} добавлено в сессию "
+                f"(всего: {image_number}). Можешь задать вопрос по картинкам, "
+                "попросить их объединить/изменить или создать на их основе видео.",
+            )
     except Exception as e:
         await reply_service_text(update,"Ошибка при загрузке изображения")
         logger.error(f"Ошибка в обработчике изображений: {e}")
@@ -413,7 +439,9 @@ async def main():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
         application.add_handler(MessageHandler(filters.LOCATION, location_handler))
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        application.add_handler(
+            MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo)
+        )
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("list", list_users))
         application.add_handler(CommandHandler("add", add_user))

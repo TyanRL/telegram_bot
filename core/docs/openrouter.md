@@ -32,13 +32,13 @@ async with media_service:
 
 ```python
 image = await media_service.generate(prompt, options)
-edited = await media_service.edit(source_image, instruction, options)
+edited = await media_service.edit([first_reference, second_reference], instruction, options)
 ```
 
 - `generate` всегда использует `qwen/qwen-image-3-pro`;
 - `edit` всегда использует `google/gemini-3.1-flash-image`;
 - обе операции вызывают `client.images.generate_async`;
-- редактирование передаёт исходник через `input_references`;
+- редактирование принимает одно или несколько изображений и передаёт их через `input_references` (до 10 референсов для FLUX.3);
 - ответ `b64_json` декодируется адаптером в `GeneratedImage`.
 
 `GeneratedImage` содержит бинарное поле `content`, MIME-тип `mime_type` и
@@ -50,7 +50,7 @@ edited = await media_service.edit(source_image, instruction, options)
 Операция видео возвращает готовый управляемый временный ресурс:
 
 ```python
-video = await media_service.generate_video(prompt, reference_image, options)
+video = await media_service.generate_video(prompt, [reference_image, another_reference], options)
 try:
     await deliver(video)
 finally:
@@ -65,6 +65,9 @@ finally:
 4. `video_generation.get_video_content_async` получает содержимое;
 5. ответ читается через `aread`, затем закрывается через `aclose`;
 6. запись во временный файл выполняется через `asyncio.to_thread`.
+
+Для видео можно передать один или несколько `GeneratedImage`; изображения
+преобразуются в `input_references` и используются провайдером как референсы.
 
 Статусы `failed`, `cancelled` и `expired` преобразуются в отдельные доменные
 ошибки. Возврат polling URL, unsigned URL и ручное скачивание по URL не входят

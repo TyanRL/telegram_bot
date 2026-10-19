@@ -173,6 +173,46 @@ class EditPayloadTests(unittest.TestCase):
         self.assertIsNone(kwargs.get("resolution"))
         self.assertFalse(UNSUPPORTED_FIELDS & set(kwargs))
 
+    def test_edit_payload_supports_multiple_reference_images(self) -> None:
+        client = _client()
+        client.images.generate_async.return_value = _response(b"edited-image")
+        second_image = GeneratedImage(
+            content=b"second-source-image",
+            mime_type="image/jpeg",
+        )
+
+        asyncio.run(
+            openrouter_images.edit(
+                [_source_image(), second_image],
+                "combine the two references",
+                client=cast(OpenRouter, client),
+            )
+        )
+
+        references: Any = client.images.generate_async.await_args.kwargs["input_references"]
+        self.assertEqual(len(references), 2)
+        expected_urls = [
+            "data:image/png;base64," + base64.b64encode(_png_bytes()).decode("ascii"),
+            "data:image/jpeg;base64," + base64.b64encode(b"second-source-image").decode("ascii"),
+        ]
+        self.assertEqual(
+            [entry["image_url"]["url"] for entry in references],
+            expected_urls,
+        )
+
+    def test_edit_rejects_more_than_ten_reference_images(self) -> None:
+        client = _client()
+        with self.assertRaisesRegex(ValueError, "не более 10"):
+            asyncio.run(
+                openrouter_images.edit(
+                    [_source_image() for _ in range(11)],
+                    "combine all references",
+                    client=cast(OpenRouter, client),
+                )
+            )
+
+        client.images.generate_async.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

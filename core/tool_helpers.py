@@ -33,6 +33,31 @@ def _pad_image_to_aspect_ratio(img: Image.Image, target_ratio: float) -> Image.I
     return canvas
 
 
+def normalize_image_for_session(
+    image_content: bytes,
+    max_size: int = settings.media.telegram_image_max_size,
+    quality: int = settings.media.telegram_image_jpeg_quality,
+) -> dict[str, Any]:
+    """Нормализует входное изображение перед сохранением в visual session."""
+    with Image.open(BytesIO(image_content)) as source_image:
+        img = source_image.convert("RGB")
+
+    img.thumbnail((max_size, max_size))
+    final_width, final_height = img.size
+    final_aspect_ratio = final_width / final_height if final_height > 0 else 1.0
+
+    normalized_image = BytesIO()
+    img.save(normalized_image, format="JPEG", quality=quality, optimize=True)
+
+    return {
+        "image_type": "image/jpeg",
+        "image": base64.b64encode(normalized_image.getvalue()).decode("utf-8"),
+        "width": final_width,
+        "height": final_height,
+        "aspect_ratio": final_aspect_ratio,
+    }
+
+
 def prepare_image_for_telegram(
     image: GeneratedImage,
     max_size: int = settings.media.telegram_image_max_size,
@@ -172,6 +197,63 @@ def generated_image_from_session_dict(image_dict: dict[str, Any]) -> GeneratedIm
             "aspect_ratio": image_dict.get("aspect_ratio"),
         },
     )
+
+
+def get_session_images(
+    session: dict[str, Any], indices: list[int] | None = None
+) -> list[dict[str, Any]]:
+    """Возвращает картинки сессии; индексы в пользовательском API начинаются с 1.
+
+    Старый формат сессии с единственным ``current_image`` поддерживается для
+    совместимости с сессиями, созданными до перехода на список ``images``.
+    Пустой список индексов, как и отсутствие индексов, означает «все картинки».
+    """
+
+    images = session.get("images")
+    if isinstance(images, list) and images:
+        available = [image for image in images if isinstance(image, dict)]
+    else:
+        current_image = session.get("current_image")
+        available = [current_image] if isinstance(current_image, dict) else []
+
+    if not indices:
+        return list(available)
+
+    selected: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for index in indices:
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ValueError("Номера изображений должны быть целыми числами")
+        if index < 1 or index > len(available):
+            raise ValueError(
+                f"Номер изображения {index} вне диапазона 1..{len(available)}"
+            )
+        if index not in seen:
+            selected.append(available[index - 1])
+            seen.add(index)
+    return selected
+
+
+def append_image_to_session(
+    session: dict[str, Any],
+    image_dict: dict[str, Any],
+    kind: str,
+    prompt: str | None = None,
+) -> int:
+    """Добавляет картинку в visual session и возвращает её 1-based номер."""
+
+    images = get_session_images(session)
+    stored_image = dict(image_dict)
+    stored_image["source_kind"] = kind
+    images.append(stored_image)
+
+    session["images"] = images
+    # Сохраняем эти поля для совместимости со старым форматом сессии.
+    session.setdefault("original_image", images[0])
+    session["current_image"] = stored_image
+    session.setdefault("source_kind", kind)
+    add_history_entry(session, kind, prompt)
+    return len(images)
 
 
 def add_history_entry(session: dict, kind: str, prompt: str | None = None) -> None:

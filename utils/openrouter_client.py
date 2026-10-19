@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, Sequence, TypeVar
 
 from openrouter import OpenRouter
 from openrouter import errors as sdk_errors
@@ -279,7 +279,7 @@ class OpenRouterService:
 
     async def edit_image(
         self,
-        source_image: GeneratedImage,
+        source_image: GeneratedImage | Sequence[GeneratedImage],
         instruction: str,
         options: ImageEditOptions | None = None,
     ) -> GeneratedImage:
@@ -287,9 +287,14 @@ class OpenRouterService:
             raise OpenRouterUnsupportedParameterError(
                 "Инструкция редактирования пуста", reason="empty_prompt", operation="image_edit"
             )
-        if not source_image.content:
+        source_images = (
+            [source_image]
+            if isinstance(source_image, GeneratedImage)
+            else list(source_image)
+        )
+        if not source_images or any(not image.content for image in source_images):
             raise OpenRouterUnsupportedParameterError(
-                "Исходное изображение пусто",
+                "Список исходных изображений пуст или содержит пустое изображение",
                 reason="invalid_source_image",
                 operation="image_edit",
             )
@@ -298,12 +303,12 @@ class OpenRouterService:
         client = self._require_client()
         return await self._run(
             "image_edit",
-            lambda: edit(source_image, instruction, options, client=client),
+            lambda: edit(source_images, instruction, options, client=client),
         )
 
     async def edit(
         self,
-        source_image: GeneratedImage,
+        source_image: GeneratedImage | Sequence[GeneratedImage],
         instruction: str,
         options: ImageEditOptions | None = None,
     ) -> GeneratedImage:
@@ -314,19 +319,26 @@ class OpenRouterService:
     async def generate_video(
         self,
         prompt: str,
-        reference_image: GeneratedImage | None = None,
+        reference_image: GeneratedImage | Sequence[GeneratedImage] | None = None,
         options: VideoGenerationOptions | None = None,
     ) -> GeneratedVideo:
         if not prompt or not prompt.strip():
             raise OpenRouterUnsupportedParameterError(
                 "Запрос на генерацию видео пуст", reason="empty_prompt", operation="video"
             )
-        if reference_image is not None and not reference_image.content:
-            raise OpenRouterUnsupportedParameterError(
-                "Исходное изображение пусто",
-                reason="invalid_source_image",
-                operation="video",
+        if reference_image is not None:
+            reference_images = (
+                [reference_image]
+                if isinstance(reference_image, GeneratedImage)
+                else list(reference_image)
             )
+            if not reference_images or any(not image.content for image in reference_images):
+                raise OpenRouterUnsupportedParameterError(
+                    "Список исходных изображений пуст или содержит пустое изображение",
+                    reason="invalid_source_image",
+                    operation="video",
+                )
+            reference_image = reference_images
         from utils.openrouter_videos import generate
 
         client = self._require_client()

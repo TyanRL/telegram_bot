@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import logging
 from enum import Enum, unique
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from telegram import Bot, KeyboardButton, ReplyKeyboardMarkup, Update, User
@@ -73,13 +74,47 @@ async def set_user_image_edit_session(user_id:int, session:dict|None)->None:
     """Устанавливает visual session для пользователя."""
     await user_visual_session.set(user_id, session)
 
+
+async def append_user_image_to_session(
+    user_id: int,
+    image_dict: dict,
+    kind: str,
+    prompt: str | None = None,
+) -> int:
+    """Атомарно добавляет изображение и возвращает его 1-based номер."""
+
+    from core.tool_helpers import append_image_to_session
+
+    async with user_visual_session.lock:
+        session = user_visual_session.data.get(user_id)
+        if not isinstance(session, dict):
+            session = {"images": [], "history": []}
+        session.setdefault("history", [])
+        image_number = append_image_to_session(session, image_dict, kind, prompt)
+        user_visual_session.data[user_id] = session
+        return image_number
+
+
+async def add_user_image_session_history(
+    user_id: int, kind: str, prompt: str | None = None
+) -> None:
+    """Атомарно добавляет запись в историю visual session."""
+
+    from core.tool_helpers import add_history_entry
+
+    async with user_visual_session.lock:
+        session = user_visual_session.data.get(user_id)
+        if isinstance(session, dict):
+            add_history_entry(session, kind, prompt)
+
+
 async def get_user_image_edit_session(user_id:int)->dict|None:
     """Получает visual session для пользователя."""
     return await user_visual_session.get(user_id, None)
 
 async def clear_user_image_edit_session(user_id:int)->None:
     """Очищает visual session для пользователя."""
-    await user_visual_session.set(user_id, None)
+    await user_visual_session.delete(user_id)
 
 def get_all_histories()->SafeDict:
     return user_histories
@@ -167,6 +202,12 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await user_histories.set(user.id, []) # type: ignore
     await user_model.set(user.id, None) # type: ignore
     await clear_user_image_edit_session(user.id) # type: ignore
+    # Удаляем файл, оставшийся от старых версий handle_photo.
+    legacy_image_path = Path(f"user_{user.id}_image.jpg")
+    try:
+        legacy_image_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Не удалось удалить legacy-файл изображения пользователя %s", user.id)
     await reply_service_text(update,"Контекст беседы был сброшен. Начинаем новую беседу.")
     logger.info(f"Context for user {user.id} is reset") # type: ignore
 

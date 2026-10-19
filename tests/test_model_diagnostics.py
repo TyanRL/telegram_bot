@@ -13,6 +13,7 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 import httpx
 from openai import APIConnectionError, NotFoundError, OpenAI
 
+from core.config import settings
 from core.openai_api import (
     _describe_api_error,
     get_model_answer,
@@ -92,7 +93,7 @@ class VerifyDefaultModelTests(unittest.TestCase):
         with patch("core.openai_api.openai_client.models.retrieve") as retrieve:
             asyncio.run(verify_default_model_available())
 
-        retrieve.assert_called_once_with("gpt-6-sol")
+        retrieve.assert_called_once_with(settings.openai.default_model)
 
     def test_not_found_model_returns_false(self) -> None:
         with patch(
@@ -114,7 +115,7 @@ class VerifyDefaultModelTests(unittest.TestCase):
         self.assertTrue(result)
 
 
-def _tool_ctx(model_name: str = "gpt-6-sol") -> ToolExecutionContext:
+def _tool_ctx(model_name: str = settings.openai.default_model) -> ToolExecutionContext:
     update: Any = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
         message=SimpleNamespace(reply_text=AsyncMock()),
@@ -137,13 +138,13 @@ class ChangeModelValidationTests(unittest.TestCase):
         self.assertIn("недоступна", result.output["error"])
 
     def test_known_model_is_applied(self) -> None:
-        ctx = _tool_ctx(model_name="gpt-5.6-terra")
+        ctx = _tool_ctx(model_name="different-model")
         with (
             patch("core.tool_handlers.model.set_user_model", new=AsyncMock()) as set_model,
             patch("core.tool_handlers.model.reply_service_text", new=AsyncMock()) as reply,
         ):
             result = asyncio.run(
-                handle_change_model(ctx, {"model": "gpt-6-sol"})
+                handle_change_model(ctx, {"model": settings.openai.default_model})
             )
 
         self.assertEqual(result.output["ok"], True)

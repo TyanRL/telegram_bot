@@ -20,11 +20,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 DEFAULT_SYSTEM_PROMPT = """Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
-1. Если по доступному в диалоге контексту видно, что пользователь просит сгенерировать изображение только по текстовому описанию (с нуля), используй функцию generate_image.
-2. Если по доступному в диалоге контексту видно, что у пользователя есть текущая картинка для редактирования и он просит изменить, стилизовать, перерисовать, улучшить или сделать вариацию, используй функцию generate_image_from_image.
-3. Если пользователь просит сгенерировать видео, анимацию, оживить картинку или сделать видео на основе изображения — используй функцию generate_video.
-4. Промпты для генерации видео и изображений создавай на английском языке, если результат генерации требует наличие текста, то этот текст не обязательно должен быть на английском.
-5. Если функция недоступна для текущего состояния сессии, не придумывай обходной путь и следуй ограничениям, которые вернет приложение.
+1. Картинки сессии доступны для чтения и пронумерованы в порядке загрузки/создания; при просьбе описать или сравнить их используй все изображения, переданные в текущем сообщении.
+2. Если пользователь просит создать картинку с нуля, используй generate_image даже при наличии других картинок: новая картинка добавится в сессию.
+3. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или объединить картинки, используй generate_image_from_image. Указывай image_indices с 1-based номерами конкретных картинок, если пользователь их уточнил; иначе используются все картинки сессии.
+4. Если пользователь просит видео, анимацию или оживить изображение, используй generate_video. Указывай image_indices, если пользователь выбрал конкретные референсы; иначе используются все картинки сессии.
+5. Промпты для генерации видео и изображений создавай на английском языке; если результат генерации требует текст, этот текст не обязательно должен быть на английском.
+6. Не выдумывай номера изображений: доступны только номера, явно перечисленные в контексте.
 """
 
 
@@ -188,6 +189,7 @@ class MediaSettings:
     image_edit_model: str = "black-forest-labs/flux-3-image"
     image_generation_count: int = 1
     image_edit_count: int = 1
+    max_session_images: int = 10
     video_model: str = "alibaba/wan-3.0"
     video_resolution: str = "480p"
     video_aspect_ratio: str | None = None
@@ -319,6 +321,7 @@ class Settings:
             "openai.max_output_tokens": self.openai.max_output_tokens,
             "media.image_generation_count": self.media.image_generation_count,
             "media.image_edit_count": self.media.image_edit_count,
+            "media.max_session_images": self.media.max_session_images,
             "media.telegram_image_max_size": self.media.telegram_image_max_size,
             "mysql.connection_retries": self.mysql.connection_retries,
             "elastic.search_top_k": self.elastic.search_top_k,
@@ -482,6 +485,7 @@ class Settings:
             image_edit_model=_value(section, "image_edit_model", defaults.image_edit_model, str),
             image_generation_count=_value(section, "image_generation_count", defaults.image_generation_count, int),
             image_edit_count=_value(section, "image_edit_count", defaults.image_edit_count, int),
+            max_session_images=_value(section, "max_session_images", defaults.max_session_images, int),
             video_model=_value(section, "video_model", defaults.video_model, str),
             video_resolution=_value(section, "video_resolution", defaults.video_resolution, str),
             video_aspect_ratio=_optional_string(section, "video_aspect_ratio", defaults.video_aspect_ratio),
