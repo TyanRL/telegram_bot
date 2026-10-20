@@ -18,14 +18,19 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+_IMAGE_RESOLUTIONS = frozenset({"768", "1K", "1.5K", "2K", "4K"})
+_IMAGE_ROUTING_MODES = frozenset({"auto", "pro_only"})
 
 DEFAULT_SYSTEM_PROMPT = """Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
 1. Картинки сессии доступны для чтения и пронумерованы в порядке загрузки/создания; при просьбе описать или сравнить их используй все изображения, переданные в текущем сообщении.
-2. Если пользователь просит создать картинку с нуля, используй generate_image даже при наличии других картинок: новая картинка добавится в сессию.
-3. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или объединить картинки, используй generate_image_from_image. Указывай image_indices с 1-based номерами конкретных картинок, если пользователь их уточнил; иначе используются все картинки сессии.
-4. Если пользователь просит видео, анимацию или оживить изображение, используй generate_video. Указывай image_indices, если пользователь выбрал конкретные референсы; иначе используются все картинки сессии.
-5. Промпты для генерации видео и изображений создавай на английском языке; если результат генерации требует текст, этот текст не обязательно должен быть на английском.
-6. Не выдумывай номера изображений: доступны только номера, явно перечисленные в контексте.
+2. Для обычной генерации, стилизации и простых изменений указывай quality="standard". Выбирай quality="pro" для точных надписей/текста на изображении, сложных сцен и композиций, портретного сходства, нескольких значимых ограничений, высокой точности сохранения деталей и повтора после неудачного результата. Не понижай запрошенный пользователем профессиональный уровень.
+3. Если пользователь просит создать картинку с нуля, используй generate_image даже при наличии других картинок: новая картинка добавится в сессию. Если это повтор неудачной генерации с нуля, снова используй generate_image, восстанови исходную полную инструкцию и добавь только актуальные уточнения пользователя; не превращай неудачный результат в референс.
+4. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или объединить картинки, используй generate_image_from_image. Указывай image_indices с 1-based номерами конкретных картинок, если пользователь их уточнил; иначе используются все картинки сессии. При повторе неудачного редактирования используй исходные референсы той операции, а не неудачный результат вместо них.
+5. Повторяя неудачный результат, передавай полную содержательную инструкцию с исходными требованиями и уточнениями, а не краткое «попробуй ещё раз»; не выдумывай новых пожеланий от себя.
+6. Если пользователь просит видео, анимацию или оживить изображение, используй generate_video. Указывай image_indices, если пользователь выбрал конкретные референсы; иначе используются все картинки сессии.
+7. Промпты для генерации видео и изображений создавай на английском языке; если результат генерации требует текст, этот текст не обязательно должен быть на английском.
+8. Не выдумывай номера изображений: доступны только номера, явно перечисленные в контексте.
+9. Не рассказывай о внутренней маршрутизации моделей без прямого запроса; не обещать пользователю разрешение выше 1K.
 """
 
 
@@ -201,6 +206,12 @@ class MediaSettings:
     video_index: int = 0
     telegram_image_max_size: int = 1280
     telegram_image_jpeg_quality: int = 88
+    image_generation_fast_model: str = "black-forest-labs/flux-3-image-klein"
+    image_edit_fast_model: str = "black-forest-labs/flux-3-image-klein"
+    image_routing_mode: str = "pro_only"
+    image_default_resolution: str | None = None
+    image_multi_reference_pro_threshold: int = 2
+    image_fallback_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +322,49 @@ class Settings:
     def validate(self) -> "Settings":
         """Проверяет ограничения, общие для всех способов запуска."""
 
+        single_image_counts = {
+            "media.image_generation_count": self.media.image_generation_count,
+            "media.image_edit_count": self.media.image_edit_count,
+        }
+        for name, value in single_image_counts.items():
+            if type(value) is not int or value != 1:
+                raise SettingsError(f"Параметр '{name}' должен быть равен 1")
+
+        model_ids = {
+            "media.image_generation_model": self.media.image_generation_model,
+            "media.image_edit_model": self.media.image_edit_model,
+            "media.image_generation_fast_model": self.media.image_generation_fast_model,
+            "media.image_edit_fast_model": self.media.image_edit_fast_model,
+        }
+        for name, value in model_ids.items():
+            if not isinstance(value, str) or not value.strip():
+                raise SettingsError(f"Параметр '{name}' должен быть непустым строковым идентификатором")
+
+        if not isinstance(self.media.image_routing_mode, str) or (
+            self.media.image_routing_mode not in _IMAGE_ROUTING_MODES
+        ):
+            allowed_modes = ", ".join(sorted(_IMAGE_ROUTING_MODES))
+            raise SettingsError(
+                f"Параметр 'media.image_routing_mode' должен быть одним из: {allowed_modes}"
+            )
+        if self.media.image_default_resolution is not None and (
+            not isinstance(self.media.image_default_resolution, str)
+            or self.media.image_default_resolution not in _IMAGE_RESOLUTIONS
+        ):
+            allowed_resolutions = ", ".join(sorted(_IMAGE_RESOLUTIONS))
+            raise SettingsError(
+                "Параметр 'media.image_default_resolution' должен быть null или одним из: "
+                f"{allowed_resolutions}"
+            )
+        threshold = self.media.image_multi_reference_pro_threshold
+        if type(threshold) is not int or threshold < 0:
+            raise SettingsError(
+                "Параметр 'media.image_multi_reference_pro_threshold' должен быть "
+                "неотрицательным целым числом"
+            )
+        if not isinstance(self.media.image_fallback_enabled, bool):
+            raise SettingsError("Параметр 'media.image_fallback_enabled' должен иметь тип bool")
+
         positive_ints = {
             "application.max_history_length": self.application.max_history_length,
             "application.max_tool_rounds": self.application.max_tool_rounds,
@@ -319,8 +373,6 @@ class Settings:
             "telegram.max_message_length": self.telegram.max_message_length,
             "telegram.connection_pool_size": self.telegram.connection_pool_size,
             "openai.max_output_tokens": self.openai.max_output_tokens,
-            "media.image_generation_count": self.media.image_generation_count,
-            "media.image_edit_count": self.media.image_edit_count,
             "media.max_session_images": self.media.max_session_images,
             "media.telegram_image_max_size": self.media.telegram_image_max_size,
             "mysql.connection_retries": self.mysql.connection_retries,
@@ -483,6 +535,20 @@ class Settings:
         return MediaSettings(
             image_generation_model=_value(section, "image_generation_model", defaults.image_generation_model, str),
             image_edit_model=_value(section, "image_edit_model", defaults.image_edit_model, str),
+            image_generation_fast_model=_value(
+                section, "image_generation_fast_model", defaults.image_generation_fast_model, str
+            ),
+            image_edit_fast_model=_value(
+                section, "image_edit_fast_model", defaults.image_edit_fast_model, str
+            ),
+            image_routing_mode=_value(section, "image_routing_mode", "pro_only", str),
+            image_default_resolution=_value(
+                section, "image_default_resolution", None, (str, type(None))
+            ),
+            image_multi_reference_pro_threshold=_value(
+                section, "image_multi_reference_pro_threshold", 2, int
+            ),
+            image_fallback_enabled=_value(section, "image_fallback_enabled", True, bool),
             image_generation_count=_value(section, "image_generation_count", defaults.image_generation_count, int),
             image_edit_count=_value(section, "image_edit_count", defaults.image_edit_count, int),
             max_session_images=_value(section, "max_session_images", defaults.max_session_images, int),

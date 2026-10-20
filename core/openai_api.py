@@ -19,7 +19,12 @@ from core.state_and_commands import (
 
 # Импорт handler-модулей для регистрации в реестре
 from core.tool_handlers import media, model, notes, weather  # noqa: F401
-from core.tool_registry import TOOLS_SCHEMA, ToolExecutionContext, get_tool_registry
+from core.tool_registry import (
+    TOOLS_SCHEMA,
+    ImageToolTurnState,
+    ToolExecutionContext,
+    get_tool_registry,
+)
 from utils.openrouter_client import OpenRouterService
 
 logger = logging.getLogger(__name__)
@@ -147,10 +152,40 @@ def _serialize_tool_output(output: Any) -> str:
         return str(output)
 
 
-def _failed_tool_result(message: str) -> ToolResult:
+_IMAGE_TOOL_NAMES = {"generate_image", "generate_image_from_image"}
+_RETRY_FORBIDDEN_INSTRUCTION = (
+    "Не вызывай платные инструменты изображений повторно в этом пользовательском ходе; "
+    "сообщи пользователю о результате и дождись нового запроса."
+)
+
+
+def _failed_tool_result(
+    message: str,
+    *,
+    retry_forbidden: bool = False,
+    blocked: bool = False,
+) -> ToolResult:
     """Создаёт безопасный результат ошибки без внутренних деталей приложения."""
 
-    return ToolResult({"ok": False, "error": message})
+    output: dict[str, Any] = {"ok": False, "error": message}
+    meta: dict[str, Any] = {}
+    if retry_forbidden:
+        output["retry_forbidden"] = True
+        output["instruction"] = _RETRY_FORBIDDEN_INSTRUCTION
+        meta["retry_forbidden"] = True
+    if blocked:
+        output["blocked_after_image_failure"] = True
+        meta["blocked_after_image_failure"] = True
+    return ToolResult(output, meta=meta)
+
+
+def _mark_image_retry_forbidden(
+    image_state: ImageToolTurnState,
+    tool_round: int,
+) -> None:
+    image_state.retry_forbidden = True
+    if image_state.failure_round is None:
+        image_state.failure_round = tool_round
 
 
 _ERROR_MESSAGE_LOG_LIMIT = 2000
@@ -199,6 +234,29 @@ async def _execute_tool(
 ) -> ToolResult:
     """Выполняет один function call и всегда возвращает модельный результат."""
 
+    is_image_tool = function_call.name in _IMAGE_TOOL_NAMES
+    image_state = tool_ctx.image_tool_state
+    if is_image_tool:
+        call_id = function_call.call_id
+        tool_round = tool_ctx.recursion_depth
+        duplicate_call = call_id in image_state.attempted_image_call_ids
+        failed_in_prior_round = image_state.retry_forbidden and (
+            image_state.failure_round is None
+            or tool_round > image_state.failure_round
+        )
+        if duplicate_call or failed_in_prior_round:
+            if duplicate_call:
+                _mark_image_retry_forbidden(image_state, tool_round)
+            return _failed_tool_result(
+                "Платная операция с изображением уже выполнялась или завершилась ошибкой "
+                "в этом ходе. Повторный вызов заблокирован; передайте пользователю "
+                "понятное сообщение.",
+                retry_forbidden=True,
+                blocked=True,
+            )
+        image_state.attempted_image_call_ids.add(call_id)
+        image_state.image_call_attempted = False
+
     handler = registry.get(function_call.name)
     if handler is None:
         logger.warning("Неизвестный tool call: %s", function_call.name)
@@ -215,9 +273,13 @@ async def _execute_tool(
             type(error).__name__,
             exc_info=True,
         )
-        return _failed_tool_result(
-            f"Не удалось выполнить инструмент '{function_call.name}'."
+        failed_result = _failed_tool_result(
+            f"Не удалось выполнить инструмент '{function_call.name}'.",
+            retry_forbidden=is_image_tool,
         )
+        if is_image_tool:
+            _mark_image_retry_forbidden(image_state, tool_ctx.recursion_depth)
+        return failed_result
 
     if not isinstance(result, ToolResult):
         logger.error(
@@ -225,9 +287,25 @@ async def _execute_tool(
             function_call.name,
             type(result).__name__,
         )
-        return _failed_tool_result(
-            f"Инструмент '{function_call.name}' вернул некорректный результат."
+        failed_result = _failed_tool_result(
+            f"Инструмент '{function_call.name}' вернул некорректный результат.",
+            retry_forbidden=is_image_tool,
         )
+        if is_image_tool:
+            _mark_image_retry_forbidden(image_state, tool_ctx.recursion_depth)
+        return failed_result
+
+    if is_image_tool:
+        retry_forbidden = result.meta.get("retry_forbidden") is True or (
+            isinstance(result.output, dict)
+            and result.output.get("retry_forbidden") is True
+        )
+        returned_error = (
+            isinstance(result.output, dict) and result.output.get("ok") is False
+        )
+        if retry_forbidden or (image_state.image_call_attempted and returned_error):
+            _mark_image_retry_forbidden(image_state, tool_ctx.recursion_depth)
+        image_state.image_call_attempted = False
 
     return result
 
@@ -238,6 +316,7 @@ async def get_model_answer(
     messages: list[dict],
     recursion_depth: int = 0,
     openrouter_service: OpenRouterService | None = None,
+    user_text: str | None = None,
 ) -> ModelAnswer:
     try:
         model_name: str | None = None
@@ -266,6 +345,7 @@ async def get_model_answer(
         )
         response = await get_simple_answer(messages, model_name)
         registry = get_tool_registry()
+        image_tool_state = ImageToolTurnState()
 
         for tool_round in range(MAXIMUM_TOOL_ROUNDS + 1):
             if not isinstance(response, Response):
@@ -330,6 +410,8 @@ async def get_model_answer(
                     openrouter_service=openrouter_service,
                     context_tokens=context_tokens,
                     completion_tokens=completion_tokens,
+                    user_text=user_text,
+                    image_tool_state=image_tool_state,
                 )
                 result = await _execute_tool(registry, function_call, tool_ctx)
                 additional_system_messages.extend(result.additional_system_messages)

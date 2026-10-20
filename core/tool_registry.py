@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from uuid import uuid4
 from typing import Any, Awaitable, Callable
 
 from telegram import Update
@@ -6,6 +7,17 @@ from telegram.ext import ContextTypes
 
 from core.common_types import ToolResult
 from utils.openrouter_client import OpenRouterService
+
+
+@dataclass
+class ImageToolTurnState:
+    """Защита от автоматического платного повтора в одном user turn."""
+
+    turn_id: str = field(default_factory=lambda: uuid4().hex)
+    retry_forbidden: bool = False
+    image_call_attempted: bool = False
+    attempted_image_call_ids: set[str] = field(default_factory=set)
+    failure_round: int | None = None
 
 
 @dataclass
@@ -19,6 +31,8 @@ class ToolExecutionContext:
     openrouter_service: OpenRouterService
     context_tokens: int = 0
     completion_tokens: int = 0
+    user_text: str | None = None
+    image_tool_state: ImageToolTurnState = field(default_factory=ImageToolTurnState)
 
 
 ToolHandler = Callable[[ToolExecutionContext, dict[str, Any]], Awaitable[ToolResult]]
@@ -35,6 +49,11 @@ TOOLS_SCHEMA = [
                 "prompt": {
                     "type": "string",
                     "description": "Запрос пользователя, по которому сгенерируется картинка",
+                },
+                "quality": {
+                    "type": "string",
+                    "enum": ["standard", "pro"],
+                    "description": "Необязательный уровень. standard — обычная генерация, стилизация и простые изменения. pro — точные надписи/текст на изображении, сложная композиция, портретное сходство, несколько значимых ограничений, высокая точность сохранения деталей и исправление/повтор неудачного результата.",
                 },
                 "aspect_ratio": {
                     "type": "string",
@@ -58,6 +77,11 @@ TOOLS_SCHEMA = [
                 "prompt": {
                     "type": "string",
                     "description": "Инструкция, как преобразовать или объединить выбранные изображения",
+                },
+                "quality": {
+                    "type": "string",
+                    "enum": ["standard", "pro"],
+                    "description": "Необязательный уровень. standard — обычная стилизация и простые изменения. pro — точные надписи/текст на изображении, сложная композиция, портретное сходство, несколько значимых ограничений, высокая точность сохранения деталей и исправление/повтор неудачного результата.",
                 },
                 "image_indices": {
                     "type": "array",

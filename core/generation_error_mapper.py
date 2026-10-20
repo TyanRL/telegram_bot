@@ -4,6 +4,7 @@ from enum import Enum
 
 from utils.openrouter_client import (
     OpenRouterAuthenticationError,
+    OpenRouterBillingError,
     OpenRouterConfigurationError,
     OpenRouterMediaError,
     OpenRouterRateLimitError,
@@ -31,6 +32,7 @@ class GenerationFailureReason(str, Enum):
     INCORRECT_RESOLUTION = "resolution_error"
     CONFIGURATION_ERROR = "configuration_error"
     AUTHENTICATION_ERROR = "authentication_error"
+    BILLING_LIMIT = "billing_limit"
     UNSUPPORTED_MODEL = "unsupported_model"
     UNSUPPORTED_PARAMETER = "unsupported_parameter"
     VIDEO_FAILED = "video_failed"
@@ -58,6 +60,9 @@ def _reason_from_openrouter_error(
         "content_policy": GenerationFailureReason.CONTENT_POLICY,
         "unsupported_model": GenerationFailureReason.UNSUPPORTED_MODEL,
         "unsupported_parameter": GenerationFailureReason.UNSUPPORTED_PARAMETER,
+        "insufficient_credits": GenerationFailureReason.BILLING_LIMIT,
+        "spending_limit": GenerationFailureReason.BILLING_LIMIT,
+        "billing_limit": GenerationFailureReason.BILLING_LIMIT,
     }
     if reason in explicit_reasons:
         return explicit_reasons[reason]
@@ -65,10 +70,27 @@ def _reason_from_openrouter_error(
         return GenerationFailureReason.CONFIGURATION_ERROR
     if isinstance(error, OpenRouterAuthenticationError):
         return GenerationFailureReason.AUTHENTICATION_ERROR
+    if isinstance(error, OpenRouterBillingError):
+        return GenerationFailureReason.BILLING_LIMIT
     if isinstance(error, OpenRouterRateLimitError):
         return GenerationFailureReason.RATE_LIMITED
     if isinstance(error, OpenRouterTimeoutError):
         return GenerationFailureReason.GENERATION_TIMEOUT
+    if error.status_code == 402:
+        return GenerationFailureReason.BILLING_LIMIT
+    provider_text = " ".join(
+        (str(error), str(error.provider_message or ""))
+    ).lower()
+    if any(
+        marker in provider_text
+        for marker in (
+            "insufficient credit",
+            "insufficient fund",
+            "spending limit",
+            "billing limit",
+        )
+    ):
+        return GenerationFailureReason.BILLING_LIMIT
     if isinstance(error, OpenRouterVideoFailedError):
         return GenerationFailureReason.VIDEO_FAILED
     if isinstance(error, OpenRouterVideoCancelledError):
@@ -98,10 +120,22 @@ def _reason_from_legacy_shape(exc: Exception) -> GenerationFailureReason:
         return GenerationFailureReason.RATE_LIMITED
     if status_code in {401, 403}:
         return GenerationFailureReason.AUTHENTICATION_ERROR
+    if status_code == 402:
+        return GenerationFailureReason.BILLING_LIMIT
     if isinstance(status_code, int) and 500 <= status_code < 600:
         return GenerationFailureReason.TEMPORARY_PROVIDER_ERROR
 
     text = str(exc).lower()
+    if any(
+        marker in text
+        for marker in (
+            "insufficient credit",
+            "insufficient fund",
+            "spending limit",
+            "billing limit",
+        )
+    ):
+        return GenerationFailureReason.BILLING_LIMIT
     if "timeout" in text or "timed out" in text:
         return GenerationFailureReason.GENERATION_TIMEOUT
     if any(keyword in text for keyword in ("policy", "moderation", "safety", "blocked")):
@@ -147,6 +181,10 @@ def map_generation_error(
         GenerationFailureReason.AUTHENTICATION_ERROR: (
             "Media-сервис не прошёл авторизацию. Обратитесь к администратору."
         ),
+        GenerationFailureReason.BILLING_LIMIT: (
+            "Для генерации недостаточно средств или достигнут лимит расходов сервиса. "
+            "Обратитесь к администратору."
+        ),
         GenerationFailureReason.UNSUPPORTED_MODEL: (
             "Выбранная модель не поддерживает эту операцию. Попробуйте позже."
         ),
@@ -177,6 +215,7 @@ def map_generation_error(
         not in {
             GenerationFailureReason.CONFIGURATION_ERROR,
             GenerationFailureReason.AUTHENTICATION_ERROR,
+            GenerationFailureReason.BILLING_LIMIT,
             GenerationFailureReason.TEMPORARY_PROVIDER_ERROR,
             GenerationFailureReason.SDK_UNAVAILABLE,
         },

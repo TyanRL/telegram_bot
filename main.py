@@ -42,6 +42,7 @@ from core.state_and_commands import (
     start,
 )
 from core.tool_helpers import (
+    describe_image_provenance,
     generated_image_from_session_dict,
     get_session_images,
     normalize_image_for_session,
@@ -68,6 +69,25 @@ def get_system_message():
     }
     return system_message
 
+
+def log_image_settings() -> None:
+    """Пишет несекретную сводку конфигурации маршрутов изображений."""
+
+    media = settings.media
+    logger.info(
+        "Image configuration: mode=%s generation_model=%s generation_fast_model=%s "
+        "edit_model=%s edit_fast_model=%s resolution=%s reference_pro_threshold=%s "
+        "fallback_enabled=%s",
+        media.image_routing_mode,
+        media.image_generation_model,
+        media.image_generation_fast_model,
+        media.image_edit_model,
+        media.image_edit_fast_model,
+        media.image_default_resolution,
+        media.image_multi_reference_pro_threshold,
+        media.image_fallback_enabled,
+    )
+
 max_history_length = settings.application.max_history_length
 
 user_histories=get_all_histories()
@@ -79,7 +99,7 @@ semaphore = asyncio.Semaphore(settings.application.concurrency_limit)
 async def get_bot_reply(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    user_message,
+    user_message: str | None,
     openrouter_service: OpenRouterService,
 )->tuple[str|None, str|None]:
     try:
@@ -106,12 +126,19 @@ async def get_bot_reply(
                     f"№{index}"
                     for index in range(start_index, len(session_images) + 1)
                 )
+                provenance_summary = describe_image_provenance(
+                    recent_session_images,
+                    start_index=start_index,
+                    all_images=session_images,
+                )
                 visual_user_text = (
                     f"{user_message}\n\n"
                     f"Вложения visual session пронумерованы по порядку: {image_labels}. "
                     "Для инструментов генерации можно указать номера картинок; "
                     "без номеров используются все."
                 )
+                if provenance_summary:
+                    visual_user_text += f"\n\n{provenance_summary}"
                 stored_history = _trim_history(
                     await user_histories.get(user.id, [])
                     + [{"role": "user", "content": visual_user_text}]
@@ -157,6 +184,7 @@ async def get_bot_reply(
             context,
             [system_message] + history,
             openrouter_service=openrouter_service,
+            user_text=user_message if isinstance(user_message, str) else None,
         )
         
         
@@ -414,6 +442,7 @@ async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     set_bot_version(version)
     settings.require_runtime_secrets()
+    log_image_settings()
     init_db()
     await verify_default_model_available()
     openrouter_service = OpenRouterService.from_settings(settings)

@@ -2,7 +2,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from core.config import settings
 
@@ -66,28 +66,28 @@ class GeneratedVideo:
 class ImageGenerationOptions:
     """Параметры операции text-to-image.
 
-    Поддерживается только набор, разрешённый FLUX.3 через Images API:
-    `aspect_ratio`, `resolution`, `seed` и `n`.
+    Параметры разрешённого Images API: `aspect_ratio`, `resolution` и `n`.
     """
 
     aspect_ratio: str | None = None
     resolution: str | None = None
     seed: int | None = None
     n: int = settings.media.image_generation_count
+    model: Optional[str] = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
 class ImageEditOptions:
     """Параметры операции редактирования изображения (image-to-image).
 
-    Поддерживается только набор, разрешённый FLUX.3 через Images API:
-    `aspect_ratio`, `resolution`, `seed` и `n`.
+    Параметры разрешённого Images API: `aspect_ratio`, `resolution` и `n`.
     """
 
     aspect_ratio: str | None = None
     resolution: str | None = None
     seed: int | None = None
     n: int = settings.media.image_edit_count
+    model: Optional[str] = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +129,7 @@ class ToolResult:
     additional_system_messages: list[dict] = field(default_factory=list)
     ctx_token: int = 0
     completion_token: int = 0
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 class SafeDict:
