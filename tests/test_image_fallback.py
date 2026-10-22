@@ -17,7 +17,12 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "123456:TEST_TOKEN")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 import utils.openrouter_client as openrouter_client
-from core.common_types import GeneratedImage, ImageEditOptions, ImageGenerationOptions
+from core.common_types import (
+    GeneratedImage,
+    ImageEditOptions,
+    ImageGenerationOptions,
+    VideoGenerationOptions,
+)
 from core.config import settings
 from core.generation_error_mapper import GenerationFailureReason, map_generation_error
 from utils.openrouter_client import (
@@ -586,6 +591,12 @@ def test_insufficient_credits_message_is_actionable_without_exposing_secrets() -
 
 
 def test_video_operation_does_not_use_image_fallback_or_sdk_retry_override() -> None:
+    """Видео не использует резерв изображений и не повторяет платный POST.
+
+    Повторная отправка POST создала бы вторую платную задачу, поэтому повторы
+    SDK для `videos.generate` явно отключаются.
+    """
+
     video_generate = AsyncMock(side_effect=_ProviderError(502, "generation failed"))
     video_client = SimpleNamespace(video_generation=SimpleNamespace(generate_async=video_generate))
     service = OpenRouterService(OpenRouterConfig(api_key="test-api-key", timeout_ms=5_000))
@@ -593,8 +604,16 @@ def test_video_operation_does_not_use_image_fallback_or_sdk_retry_override() -> 
 
     with patch.object(openrouter_client, "settings", _settings_with(image_fallback_enabled=True)):
         with pytest.raises(OpenRouterTemporaryError) as caught:
-            asyncio.run(service.generate_video("A short cinematic scene"))
+            asyncio.run(
+                service.generate_video(
+                    "A short cinematic scene",
+                    VideoGenerationOptions(duration=5),
+                    reference_images=(),
+                )
+            )
 
     assert video_generate.await_count == 1
-    assert "retries" not in cast(Any, video_generate.await_args).kwargs
+    retries = cast(Any, video_generate.await_args).kwargs["retries"]
+    assert retries.strategy == "none"
+    assert retries.retry_connection_errors is False
     assert caught.value.fallback_eligible is False

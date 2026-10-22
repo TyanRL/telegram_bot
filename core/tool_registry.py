@@ -1,12 +1,15 @@
 from dataclasses import dataclass, field
 from uuid import uuid4
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.common_types import ToolResult
+from core.common_types import QuestionAnswer, ToolQuestionCheck, ToolResult
 from utils.openrouter_client import OpenRouterService
+
+if TYPE_CHECKING:  # pragma: no cover - только для аннотаций
+    from core.video_requests import VideoRequestDraft
 
 
 @dataclass
@@ -21,8 +24,56 @@ class ImageToolTurnState:
 
 
 @dataclass
+class VideoToolTurnState:
+    """Защита от повторного платного запуска генерации видео.
+
+    Состояние переживает приостановку цикла: ожидание ответа пользователя не
+    обнуляет защиту, поэтому уже выполненный платный вызов не повторяется.
+
+    `completed_operation_ids` содержит идентификаторы уже выполненных
+    операций: повторный запуск той же операции блокируется даже при новом
+    идентификаторе вызова. `failed_operation_ids` содержит операции, завершившиеся
+    ошибкой: после них автоматический платный повтор запрещён.
+    """
+
+    turn_id: str = field(default_factory=lambda: uuid4().hex)
+    attempted_video_call_ids: set[str] = field(default_factory=set)
+    completed_operation_ids: set[str] = field(default_factory=set)
+    failed_operation_ids: set[str] = field(default_factory=set)
+    retry_forbidden: bool = False
+
+    def mark_completed(self, operation_id: str | None) -> None:
+        """Отмечает операцию как выполненную."""
+
+        if operation_id:
+            self.completed_operation_ids.add(operation_id)
+
+    def mark_failed(self, operation_id: str | None) -> None:
+        """Отмечает операцию как завершившуюся ошибкой."""
+
+        if operation_id:
+            self.failed_operation_ids.add(operation_id)
+            self.retry_forbidden = True
+
+    def is_known_operation(self, operation_id: str | None) -> bool:
+        """Проверяет, выполнялась ли уже операция с таким идентификатором."""
+
+        if not operation_id:
+            return False
+        return operation_id in self.completed_operation_ids or (
+            operation_id in self.failed_operation_ids
+        )
+
+
+@dataclass
 class ToolExecutionContext:
-    """Контекст выполнения tool handler."""
+    """Контекст выполнения tool handler.
+
+    Контекст хранит состояние видеозаявки и проверенный ответ пользователя:
+    после ответа кнопкой продолжение выполняет именно сохранённую заявку,
+    а не создаёт новую. Идентификатор операции используется для защиты от
+    повторного платного запуска.
+    """
 
     update: Update
     context: ContextTypes.DEFAULT_TYPE
@@ -33,9 +84,20 @@ class ToolExecutionContext:
     completion_tokens: int = 0
     user_text: str | None = None
     image_tool_state: ImageToolTurnState = field(default_factory=ImageToolTurnState)
+    video_tool_state: VideoToolTurnState = field(default_factory=VideoToolTurnState)
+    video_request: "VideoRequestDraft | None" = None
+    video_operation_id: str | None = None
+    video_answer: "QuestionAnswer | None" = None
 
 
 ToolHandler = Callable[[ToolExecutionContext, dict[str, Any]], Awaitable[ToolResult]]
+
+# Предварительная проверка инструмента: вызывается до выполнения пакета
+# вызовов и сообщает, что инструменту требуется ответ пользователя.
+ToolQuestionCheckHandler = Callable[
+    [ToolExecutionContext, dict[str, Any]],
+    Awaitable[ToolQuestionCheck | None],
+]
 
 # Описания функций для OpenAI API
 TOOLS_SCHEMA = [
@@ -103,7 +165,15 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "name": "generate_video",
-        "description": "Сгенерировать видео или анимацию по тексту. Без image_indices, если картинки сессии есть, используй все как референсы; иначе создай видео только по тексту. Можно указать конкретные картинки по их 1-based номерам. Генерация видео не изменяет изображения сессии.",
+        "description": (
+            "Сгенерировать видео или анимацию по тексту. Без image_indices, если картинки "
+            "сессии есть, используй все как референсы; иначе создай видео только по тексту. "
+            "Можно указать конкретные картинки по их 1-based номерам. Порядок image_indices "
+            "значим: референсы передаются провайдеру именно в указанном порядке, а не в "
+            "порядке номеров. Первому и последнему референсу автоматически не назначается "
+            "роль начального или конечного кадра. Генерация видео не изменяет изображения "
+            "сессии."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -114,10 +184,93 @@ TOOLS_SCHEMA = [
                 "image_indices": {
                     "type": "array",
                     "items": {"type": "integer", "minimum": 1},
-                    "description": "Необязательные 1-based номера изображений сессии. Если параметр не задан, используй все изображения.",
+                    "description": (
+                        "Необязательные 1-based номера изображений сессии в порядке "
+                        "пользователя. Если параметр не задан, используются все изображения "
+                        "сессии в её порядке. Порядок списка значим и передаётся провайдеру "
+                        "как есть."
+                    ),
+                },
+                "duration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Необязательная длительность видео в секундах. Указывай только "
+                        "длительность, явно названную пользователем в его сообщении; "
+                        "значение проверяется по активной видеомодели. Если пользователь "
+                        "длительность не назвал, не подставляй свою: сервер задаст вопрос."
+                    ),
                 },
             },
             "required": ["prompt"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "ask_user_question",
+        "description": (
+            "Задать пользователю уточняющий вопрос и дождаться ответа. "
+            "Покажи от одного до трёх готовых вариантов ответа с короткими "
+            "уникальными идентификаторами и понятными подписями; кнопка "
+            "«Свой ответ» добавляется приложением автоматически и не может "
+            "быть отключена. Используй, только когда для выполнения задачи не "
+            "хватает существенного параметра, который пользователь не указал. "
+            "Не придумывай ответ за пользователя и не продолжай задачу без его "
+            "ответа."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "Текст вопроса пользователю: что нужно уточнить и "
+                        "почему это важно для выполнения задачи."
+                    ),
+                },
+                "options": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "description": (
+                        "От одного до трёх готовых вариантов ответа. "
+                        "Не дополняй список бессмысленными вариантами ради "
+                        "ровно трёх."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": (
+                                    "Короткий уникальный идентификатор варианта "
+                                    "внутри вопроса (например, «red»)."
+                                ),
+                            },
+                            "label": {
+                                "type": "string",
+                                "description": "Текст кнопки с вариантом ответа.",
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": (
+                                    "Альтернативное имя поля с текстом кнопки "
+                                    "вместо label."
+                                ),
+                            },
+                        },
+                        "required": ["id"],
+                    },
+                },
+                "custom_input_hint": {
+                    "type": "string",
+                    "description": (
+                        "Необязательная подсказка, как ввести свой ответ "
+                        "(например, «Напишите цвет или его код»)."
+                    ),
+                },
+            },
+            "required": ["question"],
         },
     },
     {
@@ -231,6 +384,7 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._handlers: dict[str, ToolHandler] = {}
+        self._question_checks: dict[str, ToolQuestionCheckHandler] = {}
 
     def register(self, name: str, handler: ToolHandler) -> None:
         self._handlers[name] = handler
@@ -240,6 +394,24 @@ class ToolRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._handlers
+
+    def register_question_check(
+        self,
+        name: str,
+        handler: ToolQuestionCheckHandler,
+    ) -> None:
+        """Регистрирует предварительную проверку инструмента.
+
+        Проверка вызывается до выполнения пакета вызовов: она позволяет
+        задать уточняющий вопрос до зависимых платных операций.
+        """
+
+        self._question_checks[name] = handler
+
+    def get_question_check(self, name: str) -> ToolQuestionCheckHandler | None:
+        """Возвращает предварительную проверку инструмента, если она есть."""
+
+        return self._question_checks.get(name)
 
 
 # Глобальный реестр
@@ -251,6 +423,18 @@ def register_tool(name: str) -> Callable[[ToolHandler], ToolHandler]:
 
     def decorator(handler: ToolHandler) -> ToolHandler:
         _registry.register(name, handler)
+        return handler
+
+    return decorator
+
+
+def register_tool_question_check(
+    name: str,
+) -> Callable[[ToolQuestionCheckHandler], ToolQuestionCheckHandler]:
+    """Декоратор для регистрации предварительной проверки инструмента."""
+
+    def decorator(handler: ToolQuestionCheckHandler) -> ToolQuestionCheckHandler:
+        _registry.register_question_check(name, handler)
         return handler
 
     return decorator

@@ -4,6 +4,7 @@ import math
 import re
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
@@ -12,12 +13,21 @@ from PIL import Image
 
 from core.common_types import (
     GeneratedImage,
+    GeneratedVideo,
     ImageEditOptions,
     ImageGenerationOptions,
+    PendingQuestionRequest,
+    QuestionAnswerMode,
+    ToolQuestionCheck,
     ToolResult,
+    VideoGenerationOptions,
 )
 from core.config import settings
-from core.generation_error_mapper import map_generation_error
+from core.generation_error_mapper import (
+    GenerationFailureReason,
+    map_generation_error,
+    user_message_for_reason,
+)
 from core.image_observability import (
     log_image_generation_attempt,
     log_image_operation_summary,
@@ -38,14 +48,30 @@ from core.state_and_commands import (
 )
 from core.tool_helpers import (
     build_image_dict_from_image,
-    generated_image_from_session_dict,
     get_session_image_entries,
-    get_session_images,
     resolve_selected_images,
     send_image_to_telegram,
     send_video_to_telegram,
 )
-from core.tool_registry import ToolExecutionContext, register_tool
+from core.tool_registry import (
+    ToolExecutionContext,
+    register_tool,
+    register_tool_question_check,
+)
+from core.user_questions import build_duration_question_options
+from core.video_requests import (
+    AmbiguousDurationError,
+    AmbiguousImageOrderError,
+    ReferenceLimitExceededError,
+    UnsupportedDurationError,
+    VideoModelProfile,
+    VideoRequestDraft,
+    build_duration_validator,
+    build_video_request_draft,
+    parse_explicit_duration,
+    parse_user_image_indices,
+    resolve_video_references,
+)
 from utils.openrouter_client import OpenRouterMediaError
 
 logger = logging.getLogger(__name__)
@@ -54,6 +80,11 @@ _IMAGE_GENERATION_STATUS_TEXT = "Изображение генерируется
 _RETRY_FORBIDDEN_TEXT = (
     "Не вызывай платные инструменты изображений повторно в этом пользовательском ходе; "
     "сообщи пользователю о результате и дождись нового запроса."
+)
+_VIDEO_RETRY_FORBIDDEN_TEXT = (
+    "Не вызывай платный инструмент видео повторно в этом пользовательском ходе: "
+    "набор референсов нужно явно сократить по запросу пользователя. "
+    "Сообщи пользователю о результате и дождись нового запроса."
 )
 _SAFE_IMAGE_ERROR_CODES = frozenset(
     {
@@ -121,6 +152,7 @@ def _answer(
     details: dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     retry_forbidden: bool = False,
+    retry_forbidden_text: str | None = None,
 ) -> ToolResult:
     output: dict[str, Any] = {
         "ok": text is not None if ok is None else ok,
@@ -131,7 +163,7 @@ def _answer(
     result_meta = dict(meta or {})
     if retry_forbidden:
         output["retry_forbidden"] = True
-        output["instruction"] = _RETRY_FORBIDDEN_TEXT
+        output["instruction"] = retry_forbidden_text or _RETRY_FORBIDDEN_TEXT
         result_meta["retry_forbidden"] = True
     return ToolResult(
         output,
@@ -1090,38 +1122,279 @@ async def handle_generate_image_from_image(
     )
 
 
-@register_tool("generate_video")
-async def handle_generate_video(
-    ctx: ToolExecutionContext, args: dict[str, Any]
-) -> ToolResult:
+_DURATION_QUESTION_TEXT = "Сколько секунд должно длиться видео?"
+_DURATION_QUESTION_INPUT_HINT = (
+    "Напишите длительность в секундах (например, 7 или «7 секунд»)."
+)
+
+
+def _invalid_duration_message(profile: VideoModelProfile) -> str:
+    """Возвращает понятное сообщение о неверной длительности видео."""
+
+    allowed = ", ".join(str(value) for value in profile.allowed_durations)
+    return (
+        f"{user_message_for_reason(GenerationFailureReason.INVALID_DURATION)} "
+        f"Допустимые значения: {allowed}."
+    )
+
+
+def build_duration_question_request(profile: VideoModelProfile) -> PendingQuestionRequest:
+    """Строит обязательный вопрос о длительности видео.
+
+    Варианты кнопок берутся из активного видеопрофиля, а собственный ответ
+    проверяется тем же валидатором: длительность подтверждает пользователь.
+    """
+
+    presets = profile.question_duration_presets() or profile.allowed_durations
+    return PendingQuestionRequest(
+        text=_DURATION_QUESTION_TEXT,
+        options=build_duration_question_options(presets),
+        input_hint=_DURATION_QUESTION_INPUT_HINT,
+        answer_mode=QuestionAnswerMode.VIDEO_REQUEST,
+        validator=build_duration_validator(profile),
+    )
+
+
+def _confirmed_duration(ctx: ToolExecutionContext, profile: VideoModelProfile) -> int | None:
+    """Возвращает длительность, явно названную пользователем.
+
+    Значение, переданное моделью в аргументах инструмента, согласием
+    пользователя не является и подтверждённой длительностью не считается.
+
+    Противоречивые, приблизительные и неоднозначные значения не угадываются:
+    в этом случае возвращается ``None`` и задаётся вопрос о длительности.
+    Явно запрошенная неподдерживаемая длительность — ошибка, а не вопрос.
+    """
+
+    try:
+        return parse_explicit_duration(getattr(ctx, "user_text", None), profile)
+    except AmbiguousDurationError:
+        logger.info("Длительность в исходном запросе неоднозначна: задаётся вопрос")
+        return None
+    except UnsupportedDurationError:
+        raise
+
+
+def _user_image_indices(ctx: ToolExecutionContext) -> list[int]:
+    """Возвращает номера референсов, явно названные пользователем.
+
+    Явный порядок пользователя в тексте запроса имеет приоритет над
+    ``image_indices``, переданными моделью.
+    """
+
+    return parse_user_image_indices(getattr(ctx, "user_text", None))
+
+
+@dataclass(frozen=True, slots=True)
+class _VideoDraftPreparation:
+    """Результат подготовки снимка видеозаявки.
+
+    ``draft`` заполнен только при успешной подготовке. ``error`` содержит
+    понятный текст ошибки, а ``blocks_retry`` означает, что платный запуск в
+    этом ходе запрещён: модель не должна повторить генерацию с незаметно
+    урезанным или подменённым набором референсов. В этом случае вопрос о
+    длительности не задаётся — сначала нужно разобраться с самим запросом.
+    """
+
+    draft: VideoRequestDraft | None = None
+    error: str | None = None
+    blocks_retry: bool = False
+
+
+async def _prepare_video_draft(
+    ctx: ToolExecutionContext,
+    args: dict[str, Any],
+) -> _VideoDraftPreparation:
+    """Готовит снимок видеозаявки.
+
+    Снимок фиксируется до вопроса о длительности: промпт, упорядоченные
+    реальные номера референсов, байты выбранных изображений и снимок
+    активного видеопрофиля. Новые загрузки в уже созданную заявку не
+    попадают.
+    """
+
     user_id = ctx.update.effective_user.id  # type: ignore
     prompt = args.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         logger.warning("Пустой prompt для generate_video")
-        return _answer(ctx, "Не удалось сгенерировать видео: запрос пустой.")
+        return _VideoDraftPreparation(
+            error="Не удалось сгенерировать видео: запрос пустой."
+        )
 
-    reference_images: list[GeneratedImage] | None = None
+    profile = settings.video_profile
+
+    try:
+        user_indices = _user_image_indices(ctx)
+    except AmbiguousImageOrderError as error:
+        logger.warning("Неоднозначный порядок референсов в запросе: %s", error)
+        return _VideoDraftPreparation(
+            error=f"Не удалось подготовить видео: {error}",
+            blocks_retry=True,
+        )
+
+    try:
+        tool_indices = _image_indices(args)
+    except ValueError as error:
+        logger.warning("Некорректные image_indices: %s", error)
+        return _VideoDraftPreparation(
+            error=f"Не удалось подготовить видео: {error}",
+            blocks_retry=True,
+        )
+
+    # Явный выбор пользователя приоритетнее автоматически восстановленного.
+    image_indices = user_indices or tool_indices
+
     session = await get_user_image_edit_session(user_id)
     try:
-        image_indices = _image_indices(args)
-        if session is not None:
-            selected_image_dicts = get_session_images(session, image_indices)
-            if selected_image_dicts:
-                reference_images = [
-                    generated_image_from_session_dict(image_dict)
-                    for image_dict in selected_image_dicts
-                ]
-        elif image_indices:
-            raise ValueError("В visual session отсутствуют изображения")
-    except Exception as error:
-        logger.error("Ошибка при чтении изображений для видео: %s", error, exc_info=True)
-        return _answer(ctx, "Не удалось подготовить выбранные изображения для видео.")
+        selection = resolve_video_references(
+            session if isinstance(session, dict) else None,
+            image_indices,
+            profile=profile,
+        )
+    except ReferenceLimitExceededError as error:
+        logger.warning("Превышен предел референсов видеопрофиля: %s", error)
+        return _VideoDraftPreparation(
+            error=f"Не удалось подготовить видео: {error}",
+            blocks_retry=True,
+        )
+    except ValueError as error:
+        logger.warning("Некорректный выбор референсов: %s", error)
+        return _VideoDraftPreparation(
+            error=f"Не удалось подготовить видео: {error}",
+            blocks_retry=True,
+        )
 
-    max_refs = min(10, settings.media.max_session_images)
-    references_truncated = False
-    if reference_images is not None and len(reference_images) > max_refs:
-        references_truncated = True
-        reference_images = reference_images[-max_refs:]
+    try:
+        draft = build_video_request_draft(
+            prompt,
+            profile,
+            reference_images=selection.images,
+            reference_indices=selection.indices,
+        )
+    except ValueError as error:
+        logger.warning("Заявка на видео отклонена: %s", error)
+        return _VideoDraftPreparation(
+            error=f"Не удалось подготовить видео: {error}"
+        )
+
+    return _VideoDraftPreparation(draft=draft)
+
+
+@register_tool_question_check("generate_video")
+async def check_generate_video(
+    ctx: ToolExecutionContext,
+    args: dict[str, Any]
+) -> ToolQuestionCheck | None:
+    """Проверяет, нужно ли уточнить длительность видео.
+
+    Проверка выполняется до пакета вызовов: обязательный вопрос о длительности
+    всегда предшествует платным операциям, даже если модель поставила вызов
+    видео после них.
+    """
+
+    preparation = await _prepare_video_draft(ctx, args)
+    draft = preparation.draft
+    if draft is None:
+        if preparation.blocks_retry:
+            logger.info("Заявка на видео отклонена: платный повтор заблокирован")
+        return None
+    try:
+        duration = _confirmed_duration(ctx, draft.profile)
+    except UnsupportedDurationError as error:
+        logger.warning("Недопустимая длительность в исходном запросе: %s", error)
+        return None
+    if duration is not None:
+        return None
+    return ToolQuestionCheck(
+        request=build_duration_question_request(draft.profile),
+        video_request=draft,
+        video_operation_id=draft.operation_id,
+    )
+
+
+def _mark_video_operation_failed(ctx: ToolExecutionContext, operation_id: str) -> None:
+    """Запрещает автоматический платный повтор видео после ошибки."""
+
+    state = getattr(ctx, "video_tool_state", None)
+    if state is None:
+        return
+    state.mark_failed(operation_id)
+
+
+def _mark_video_operation_completed(ctx: ToolExecutionContext, operation_id: str) -> None:
+    """Отмечает видеооперацию как выполненную."""
+
+    state = getattr(ctx, "video_tool_state", None)
+    if state is None:
+        return
+    state.mark_completed(operation_id)
+
+
+def _video_result_payload(
+    draft: VideoRequestDraft,
+    video: GeneratedVideo,
+) -> dict[str, Any]:
+    """Собирает структурированный результат генерации видео.
+
+    Возвращаются фактические модель и разрешение активного профиля,
+    длительность, пропорция, номера референсов в том же порядке,
+    идентификатор задачи провайдера и известная стоимость. Бинарное
+    содержимое картинок и data URL в результат не попадают.
+    """
+
+    profile = draft.profile
+    cost = getattr(video, "cost", None)
+    raw_metadata = getattr(video, "metadata", None)
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+    job_id = metadata.get("job_id")
+    return {
+        "model": profile.model,
+        "resolution": profile.resolution,
+        "duration": draft.duration,
+        "aspect_ratio": draft.aspect_ratio or settings.media.video_aspect_ratio,
+        "reference_indices": list(draft.reference_indices),
+        "reference_count": len(draft.reference_images),
+        "job_id": job_id if isinstance(job_id, str) and job_id else None,
+        "cost": cost,
+        "billing_unknown": cost is None,
+    }
+
+
+async def run_video_request(
+    ctx: ToolExecutionContext,
+    draft: VideoRequestDraft,
+) -> ToolResult:
+    """Выполняет подготовленную видеозаявку.
+
+    Используется и обычным обработчиком инструмента, и продолжением после
+    ответа пользователя: платный запуск выполняется ровно один раз.
+    """
+
+    profile = draft.profile
+    if draft.duration is None:
+        return _answer(
+            ctx,
+            _invalid_duration_message(profile),
+            ok=False,
+        )
+
+    options = VideoGenerationOptions(
+        duration=draft.duration,
+        model=profile.model,
+        resolution=profile.resolution,
+        aspect_ratio=settings.media.video_aspect_ratio,
+    )
+    reference_images = list(draft.reference_images)
+
+    logger.info(
+        "Видео: operation_id=%s, model=%s, resolution=%s, duration=%s, "
+        "references=%s",
+        draft.operation_id,
+        profile.model,
+        profile.resolution,
+        draft.duration,
+        list(draft.reference_indices),
+    )
 
     status_message = await reply_service_message(ctx.update, "Видео генерируется, подождите")
     animation_task = asyncio.create_task(
@@ -1133,17 +1406,36 @@ async def handle_generate_video(
     )
 
     try:
-        video = await ctx.openrouter_service.generate_video(prompt, reference_images)
+        video = await ctx.openrouter_service.generate_video(
+            draft.prompt,
+            options,
+            reference_images=reference_images,
+        )
     except OpenRouterMediaError as error:
         mapped = map_generation_error(error, context="video")
+        logger.warning(
+            "Видео: operation_id=%s, этап=create/poll, результат=ошибка, "
+            "job_id=%s, reason=%s, cost=%s",
+            draft.operation_id,
+            getattr(error, "job_id", None),
+            mapped.reason.value,
+            getattr(error, "cost", None),
+        )
+        # После ошибки автоматический платный повтор модели запрещён.
+        _mark_video_operation_failed(ctx, draft.operation_id)
         try:
             await status_message.edit_text(mapped.user_message)
         except Exception:
             pass
         await reply_service_text(ctx.update, mapped.user_message)
-        return _answer(ctx, None)
+        return _answer(ctx, None, meta={"operation_id": draft.operation_id})
     except Exception as error:
-        logger.error("Ошибка при генерации видео: %s", error, exc_info=True)
+        logger.error(
+            "Видео: operation_id=%s, результат=ошибка, type=%s",
+            draft.operation_id,
+            type(error).__name__,
+        )
+        _mark_video_operation_failed(ctx, draft.operation_id)
         try:
             await status_message.edit_text(
                 "_Произошла ошибка при генерации видео._",
@@ -1151,7 +1443,7 @@ async def handle_generate_video(
             )
         except Exception:
             pass
-        return _answer(ctx, None)
+        return _answer(ctx, None, meta={"operation_id": draft.operation_id})
     finally:
         animation_task.cancel()
         try:
@@ -1167,15 +1459,37 @@ async def handle_generate_video(
     except Exception:
         pass
 
+    payload = _video_result_payload(draft, video)
     try:
         success = await send_video_to_telegram(ctx.update, video, status_message)
     finally:
         video.cleanup()
+    if success:
+        _mark_video_operation_completed(ctx, draft.operation_id)
+    else:
+        # Сбой доставки не приводит к повторной генерации видео.
+        _mark_video_operation_failed(ctx, draft.operation_id)
+    logger.info(
+        "Видео: operation_id=%s, этап=delivery, job_id=%s, результат=%s, cost=%s",
+        draft.operation_id,
+        payload["job_id"],
+        "отправлено" if success else "ошибка доставки",
+        payload["cost"] if payload["cost"] is not None else "unknown",
+    )
     if not success:
-        return _answer(ctx, None)
+        return _answer(
+            ctx,
+            None,
+            details={"delivery": "failed"},
+            meta={"operation_id": draft.operation_id},
+        )
 
     try:
-        await add_user_image_session_history(user_id, "video", prompt)
+        await add_user_image_session_history(
+            ctx.update.effective_user.id,  # type: ignore
+            "video",
+            draft.prompt,
+        )
     except Exception as error:
         logger.error(
             "Ошибка при обновлении history visual session после видео: %s",
@@ -1186,14 +1500,49 @@ async def handle_generate_video(
     return _answer(
         ctx,
         (
-            "В Video API переданы последние 10 референсов. "
-            if references_truncated
-            else ""
-        )
-        + (
             "Я сделал :) Видео создано на основе выбранных изображений. "
             "Все картинки сессии сохранены для дальнейших операций."
             if reference_images
             else "Я сделал :) Видео создано по текстовому описанию."
         ),
+        details=payload,
+        meta={"operation_id": draft.operation_id},
     )
+
+
+@register_tool("generate_video")
+async def handle_generate_video(
+    ctx: ToolExecutionContext, args: dict[str, Any]
+) -> ToolResult:
+    preparation = await _prepare_video_draft(ctx, args)
+    draft = preparation.draft
+    if draft is None:
+        return _answer(
+            ctx,
+            preparation.error or "Не удалось подготовить видео.",
+            ok=False,
+            retry_forbidden=preparation.blocks_retry,
+            retry_forbidden_text=_VIDEO_RETRY_FORBIDDEN_TEXT,
+        )
+
+    profile = draft.profile
+    try:
+        duration = _confirmed_duration(ctx, profile)
+    except UnsupportedDurationError as error:
+        logger.warning("Недопустимая длительность в исходном запросе: %s", error)
+        return _answer(ctx, f"Не удалось подготовить видео: {error}", ok=False)
+
+    if duration is None:
+        # Значение duration, придуманное моделью, согласием пользователя не
+        # является: без явного указания пользователя задаётся вопрос.
+        return _answer(
+            ctx,
+            _invalid_duration_message(profile),
+            ok=False,
+            details={
+                "requires_duration": True,
+                "duration_question": build_duration_question_request(profile).text,
+            },
+        )
+
+    return await run_video_request(ctx, draft.with_duration(duration))

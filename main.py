@@ -14,12 +14,20 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from core.common_types import PendingQuestionRequest, QuestionAnswer
 from core.config import settings
 from core.openai_api import (
     get_model_answer,
+    resume_model_answer,
     transcribe_audio,
     verify_default_model_available,
 )
+from core.question_handlers import (
+    handle_question_text,
+    register_question_handlers,
+)
+from core.question_state import PendingQuestion, get_question_store
+from core.user_questions import UserQuestionService
 from core.state_and_commands import (
     TELEGRAM_BOT_TOKEN,
     append_user_image_to_session,
@@ -186,8 +194,22 @@ async def get_bot_reply(
             openrouter_service=openrouter_service,
             user_text=user_message if isinstance(user_message, str) else None,
         )
-        
-        
+
+        # Работа приостановлена до ответа пользователя: вопрос отправляется
+        # отдельным сообщением с кнопками, а текущий цикл модели не
+        # продолжается и не повторяет уже выполненные действия. История
+        # пользователя уже содержит исходный запрос, поэтому она только
+        # сохраняется без изменений.
+        if m_a.pending_question is not None:
+            await user_histories.set(user.id, stored_history)
+            await _ask_user_question(
+                update,
+                context,
+                m_a.pending_question,
+                m_a.pending_continuation,
+            )
+            return None, f"Токенов: использовано - {m_a.ctx_token}, сгенерировано - {m_a.completion_token}."
+
         # Добавляем дополнительную информацию в текстовую историю пользователя.
         if m_a.additional_system_messages is not None:
             for message in m_a.additional_system_messages:
@@ -206,6 +228,114 @@ async def get_bot_reply(
     except Exception as e:
         logger.error("Ошибка при обращении к OpenAI API: type=%s", type(e).__name__)
         return "Извините, произошла ошибка при обработке вашего запроса.", None
+
+async def _ask_user_question(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    request,
+    continuation,
+) -> None:
+    """Отправляет вопрос пользователю и сохраняет контекст продолжения.
+
+    Обработка текущего обновления на этом заканчивается: цикл модели
+    продолжится отдельным обновлением после ответа пользователя.
+    """
+
+    service = _get_question_service(context)
+    try:
+        await service.ask(update, request, continuation=continuation)
+    except Exception as error:
+        logger.error(
+            "Не удалось отправить вопрос пользователю: type=%s",
+            type(error).__name__,
+            exc_info=True,
+        )
+        await reply_service_text(
+            update,
+            "Не удалось задать уточняющий вопрос. Повторите запрос.",
+        )
+
+
+def _get_question_service(context: ContextTypes.DEFAULT_TYPE) -> UserQuestionService:
+    """Возвращает сервис вопросов из данных приложения."""
+
+    application = getattr(context, "application", None)
+    bot_data = getattr(application, "bot_data", None)
+    if isinstance(bot_data, dict):
+        service = bot_data.get("question_service")
+        if isinstance(service, UserQuestionService):
+            return service
+    return UserQuestionService(store=get_question_store())
+
+
+async def _continue_after_answer(
+    record: PendingQuestion,
+    answer: QuestionAnswer,
+    update: Update | None,
+    context: ContextTypes.DEFAULT_TYPE | None,
+) -> None:
+    """Продолжает прерванную задачу после ответа пользователя.
+
+    Продолжение выполняется вне блокировки состояния: долгая генерация не
+    мешает приёму других обновлений пользователя.
+    """
+
+    if record.continuation is None:
+        logger.info(
+            "У вопроса %s нет контекста продолжения: работа не возобновляется",
+            record.question_id,
+        )
+        return
+
+    if update is None or context is None:
+        logger.info(
+            "Нет Telegram-обновления для продолжения вопроса %s",
+            record.question_id,
+        )
+        return
+
+    openrouter_service = context.application.bot_data.get("openrouter_service")
+    if not isinstance(openrouter_service, OpenRouterService):
+        logger.error("OpenRouter service отсутствует в application.bot_data")
+        await reply_service_text(
+            update,
+            "Не удалось продолжить задачу: media-сервис временно недоступен.",
+        )
+        return
+
+    answer_text = await resume_model_answer(
+        update,
+        context,
+        record.continuation,
+        answer,
+        openrouter_service=openrouter_service,
+        question=PendingQuestionRequest(
+            text=record.text,
+            options=tuple(record.options),
+            input_hint=record.input_hint,
+            answer_mode=record.answer_mode,
+            validator=record.validator,
+        ),
+    )
+
+    if answer_text.bot_reply:
+        # Фактический результат продолжения попадает в историю ровно один раз.
+        user = update.effective_user
+        if user is not None:
+            history = list(await user_histories.get(user.id, []))
+            for message in answer_text.additional_system_messages or ():
+                history.append(message)
+            history.append({"role": "assistant", "content": answer_text.bot_reply})
+            await user_histories.set(user.id, _trim_history(history))
+        await send_big_text(update, answer_text.bot_reply)
+    if answer_text.pending_question is not None:
+        await _ask_user_question(
+            update,
+            context,
+            answer_text.pending_question,
+            answer_text.pending_continuation,
+        )
+
 
 async def get_history(user_id, user_message):
     history = await user_histories.get(user_id, [])
@@ -274,6 +404,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await in_user_list(user):
         await not_authorized_message(update, user)
         return
+    # Активный вопрос перехватывает текст до нового обращения к модели.
+    if await handle_question_text(update, context, user_message):
+        return
     return await handle_message_inner(update, context, user_message)
 
 async def handle_message_inner(
@@ -336,7 +469,10 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                  await reply_service_text(update,"Произошла ошибка при распознавании вашего сообщения.")
                  return
             await send_big_text(update, f"Распознаный текст: \n {recognized_text}")
-            await handle_message_inner(update, context, recognized_text) 
+            # Распознанный голос — тоже ответ на активный вопрос.
+            if await handle_question_text(update, context, recognized_text):
+                return
+            await handle_message_inner(update, context, recognized_text)
             if recognized_text:
                 logger.info("Распознанный текст от пользователя %s: length=%s", user.id, len(recognized_text))
         except Exception as e:
@@ -380,6 +516,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if not await in_user_list(user):
             await not_authorized_message(update, user)
             return
+        # Фотография сама по себе не закрывает активный вопрос и не меняет
+        # подготовленные референсы видео: она только пополняет сессию.
         photo = update.message.photo
         document = getattr(update.message, "document", None)
         document_mime_type = getattr(document, "mime_type", None)
@@ -405,6 +543,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
         if update.message.caption and update.message.caption.strip():
+            # Подпись к фотографии — тоже текст из исходного чата: при активном
+            # вопросе она считается ответом на него.
+            if await handle_question_text(update, context, update.message.caption):
+                return
             await handle_message_inner(update, context, update.message.caption)
         else:
             await reply_service_text(
@@ -463,6 +605,15 @@ async def main():
             .build()
         )
         application.bot_data["openrouter_service"] = openrouter_service
+
+        # Сервис вопросов: функция продолжения подключается явно и знает,
+        # как возобновить прерванный цикл инструментов после ответа.
+        question_service = register_question_handlers(
+            application,
+            UserQuestionService(store=get_question_store()),
+        )
+        question_service.set_continuation(_continue_after_answer)
+        logger.info("Сервис вопросов зарегистрирован: %s", type(question_service).__name__)
 
         # Добавление обработчиков
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

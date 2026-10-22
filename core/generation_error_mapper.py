@@ -15,6 +15,7 @@ from utils.openrouter_client import (
     OpenRouterVideoCancelledError,
     OpenRouterVideoExpiredError,
     OpenRouterVideoFailedError,
+    OpenRouterVideoJobUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,9 @@ class GenerationFailureReason(str, Enum):
     VIDEO_FAILED = "video_failed"
     VIDEO_CANCELLED = "video_cancelled"
     VIDEO_EXPIRED = "video_expired"
+    VIDEO_JOB_UNAVAILABLE = "video_job_unavailable"
+    INVALID_DURATION = "invalid_duration"
+    QUESTION_EXPIRED = "question_expired"
     SDK_UNAVAILABLE = "sdk_unavailable"
     INTERNAL_ERROR = "internal_error"
     UNKNOWN_ERROR = "unknown_error"
@@ -63,6 +67,9 @@ def _reason_from_openrouter_error(
         "insufficient_credits": GenerationFailureReason.BILLING_LIMIT,
         "spending_limit": GenerationFailureReason.BILLING_LIMIT,
         "billing_limit": GenerationFailureReason.BILLING_LIMIT,
+        "video_job_unavailable": GenerationFailureReason.VIDEO_JOB_UNAVAILABLE,
+        "invalid_duration": GenerationFailureReason.INVALID_DURATION,
+        "question_expired": GenerationFailureReason.QUESTION_EXPIRED,
     }
     if reason in explicit_reasons:
         return explicit_reasons[reason]
@@ -97,6 +104,8 @@ def _reason_from_openrouter_error(
         return GenerationFailureReason.VIDEO_CANCELLED
     if isinstance(error, OpenRouterVideoExpiredError):
         return GenerationFailureReason.VIDEO_EXPIRED
+    if isinstance(error, OpenRouterVideoJobUnavailableError):
+        return GenerationFailureReason.VIDEO_JOB_UNAVAILABLE
     if isinstance(error, OpenRouterSdkUnavailableError):
         return GenerationFailureReason.SDK_UNAVAILABLE
     if isinstance(error, OpenRouterTemporaryError):
@@ -166,6 +175,28 @@ def map_generation_error(
         getattr(exc, "status_code", None),
     )
 
+    return UserFacingGenerationError(
+        reason=reason,
+        user_message=user_message_for_reason(reason),
+        is_user_actionable=reason
+        not in {
+            GenerationFailureReason.CONFIGURATION_ERROR,
+            GenerationFailureReason.AUTHENTICATION_ERROR,
+            GenerationFailureReason.BILLING_LIMIT,
+            GenerationFailureReason.TEMPORARY_PROVIDER_ERROR,
+            GenerationFailureReason.SDK_UNAVAILABLE,
+        },
+    )
+
+
+def user_message_for_reason(reason: GenerationFailureReason) -> str:
+    """Возвращает понятный пользователю текст для причины отказа.
+
+    Тексты используются и в [`map_generation_error()`](core/generation_error_mapper.py:150),
+    и в слоях, которые отказывают до сетевого вызова: неверная длительность
+    видео и истёкшее ожидание ответа.
+    """
+
     messages = {
         GenerationFailureReason.CONTENT_POLICY: (
             "Не удалось сгенерировать результат: запрос отклонён фильтрами безопасности. "
@@ -200,6 +231,17 @@ def map_generation_error(
         GenerationFailureReason.VIDEO_FAILED: "Сервис не смог сгенерировать видео. Попробуйте изменить запрос.",
         GenerationFailureReason.VIDEO_CANCELLED: "Генерация видео была отменена провайдером.",
         GenerationFailureReason.VIDEO_EXPIRED: "Задача генерации видео истекла. Попробуйте ещё раз.",
+        GenerationFailureReason.VIDEO_JOB_UNAVAILABLE: (
+            "Задача генерации видео больше недоступна у сервиса. "
+            "Повторный платный запрос не выполнялся: задайте запрос заново."
+        ),
+        GenerationFailureReason.INVALID_DURATION: (
+            "Указанная длительность видео не поддерживается. "
+            "Уточните длительность в секундах и повторите запрос."
+        ),
+        GenerationFailureReason.QUESTION_EXPIRED: (
+            "Время ожидания ответа истекло. Задайте запрос заново."
+        ),
         GenerationFailureReason.SDK_UNAVAILABLE: "Сервис генерации временно недоступен. Попробуйте позже.",
         GenerationFailureReason.TEMPORARY_PROVIDER_ERROR: "Сервис генерации временно недоступен. Попробуйте позже.",
         GenerationFailureReason.PROMPT_TOO_COMPLEX: "Попробуйте сделать описание короче и проще.",
@@ -208,15 +250,4 @@ def map_generation_error(
         GenerationFailureReason.INTERNAL_ERROR: "Произошла внутренняя ошибка при генерации.",
         GenerationFailureReason.UNKNOWN_ERROR: "Произошла внутренняя ошибка при генерации. Попробуйте позже.",
     }
-    return UserFacingGenerationError(
-        reason=reason,
-        user_message=messages[reason],
-        is_user_actionable=reason
-        not in {
-            GenerationFailureReason.CONFIGURATION_ERROR,
-            GenerationFailureReason.AUTHENTICATION_ERROR,
-            GenerationFailureReason.BILLING_LIMIT,
-            GenerationFailureReason.TEMPORARY_PROVIDER_ERROR,
-            GenerationFailureReason.SDK_UNAVAILABLE,
-        },
-    )
+    return messages[reason]

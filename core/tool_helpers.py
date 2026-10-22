@@ -110,35 +110,61 @@ async def send_image_to_telegram(
     bio, normalized_b64_data, gen_width, gen_height, gen_aspect_ratio = (
         prepare_image_for_telegram(image, target_aspect_ratio=target_aspect_ratio)
     )
-    await update.message.reply_photo(photo=InputFile(bio))  # type: ignore
+    target = get_delivery_target(update)
+    if target is None:
+        raise ValueError("Нет сообщения-адресата для отправки изображения")
+    await target.reply_photo(photo=InputFile(bio))
     return normalized_b64_data, gen_width, gen_height, gen_aspect_ratio
+
+
+def get_delivery_target(update: Update) -> Any:
+    """Возвращает сообщение-адресат для отправки файла.
+
+    Обычное сообщение пользователя адресуется напрямую. Обновление от
+    inline-кнопки не содержит `update.message`: адресатом становится
+    сообщение бота, к которому привязана кнопка (`update.effective_message`).
+    Ответ так уходит в исходный чат и тему, а не в чат бота по умолчанию.
+    """
+
+    from core.state_and_commands import get_delivery_message
+
+    return get_delivery_message(update)
 
 
 async def send_video_to_telegram(
     update: Update, video: GeneratedVideo, status_message: Any
 ) -> bool:
-    """Отправляет видео в Telegram, пробуя video, затем document. Возвращает True при успехе."""
+    """Отправляет видео в Telegram, пробуя video, затем document. Возвращает True при успехе.
+
+    Сбой доставки не приводит к повторной генерации: файл освобождается, а
+    вызывающий код сообщает пользователю о неудаче.
+    """
+    target = get_delivery_target(update)
+    if target is None:
+        logger.error("Нет сообщения-адресата для отправки видео")
+        video.cleanup()
+        return False
     try:
         with video.path.open("rb") as video_file:
-            await update.message.reply_video(
+            await target.reply_video(
                 video=InputFile(video_file),
                 write_timeout=settings.telegram.video_write_timeout,
                 read_timeout=settings.telegram.video_read_timeout,
                 connect_timeout=settings.telegram.video_connect_timeout,
                 pool_timeout=settings.telegram.video_pool_timeout,
-            )  # type: ignore
+            )
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке видео как video: {e}", exc_info=True)
         try:
             with video.path.open("rb") as video_file:
-                await update.message.reply_document(
+                await target.reply_document(
                     document=InputFile(video_file),
                     write_timeout=settings.telegram.video_write_timeout,
                     read_timeout=settings.telegram.video_read_timeout,
                     connect_timeout=settings.telegram.video_connect_timeout,
                     pool_timeout=settings.telegram.video_pool_timeout,
-                )  # type: ignore
+                )
             return True
         except Exception as e2:
             logger.error(f"Ошибка при отправке видео как document: {e2}", exc_info=True)
@@ -427,17 +453,21 @@ def get_session_image_entries(
 ) -> list[tuple[int, dict[str, Any]]]:
     """Возвращает пары (реальный 1-based номер, запись изображения) сессии.
 
-    Старый формат сессии с единственным ``current_image`` поддерживается для
-    совместимости с сессиями, созданными до перехода на список ``images``.
+    Visual session имеет единственный актуальный формат: список изображений
+    ``images``. Старый формат с единственным текущим изображением не
+    поддерживается и не преобразуется.
+
     Пустой список индексов, как и отсутствие индексов, означает «все картинки».
+    Порядок сохраняется, а повторный номер используется один раз по первому
+    вхождению.
     """
 
     images = session.get("images")
-    if isinstance(images, list) and images:
-        available = [image for image in images if isinstance(image, dict)]
-    else:
-        current_image = session.get("current_image")
-        available = [current_image] if isinstance(current_image, dict) else []
+    available = (
+        [image for image in images if isinstance(image, dict)]
+        if isinstance(images, list)
+        else []
+    )
 
     if not indices:
         return list(enumerate(available, start=1))
@@ -460,7 +490,7 @@ def get_session_image_entries(
 def get_session_images(
     session: dict[str, Any], indices: list[int] | None = None
 ) -> list[dict[str, Any]]:
-    """Возвращает записи изображений, сохраняя совместимость старого API."""
+    """Возвращает записи изображений сессии в выбранном порядке."""
 
     return [image for _, image in get_session_image_entries(session, indices)]
 
@@ -570,7 +600,11 @@ def append_image_to_session(
     kind: str,
     prompt: str | None = None,
 ) -> int:
-    """Добавляет картинку в visual session и возвращает её 1-based номер."""
+    """Добавляет картинку в visual session и возвращает её 1-based номер.
+
+    Сессия хранит только список изображений: дублирующие переходные поля
+    верхнего уровня не сохраняются.
+    """
 
     images = get_session_images(session)
     stored_image = dict(image_dict)
@@ -589,10 +623,6 @@ def append_image_to_session(
     images.append(stored_image)
 
     session["images"] = images
-    # Сохраняем эти поля для совместимости со старым форматом сессии.
-    session.setdefault("original_image", images[0])
-    session["current_image"] = stored_image
-    session.setdefault("source_kind", kind)
     add_history_entry(session, kind, prompt)
     return len(images)
 

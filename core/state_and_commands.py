@@ -15,6 +15,7 @@ from telegram.helpers import escape_markdown
 from core.common_types import SafeDict
 from core.config import settings
 from core.md_clean import clean_message
+from core.question_state import invalidate_user_questions
 from utils.sql import (
     get_admins,
     get_all,
@@ -151,21 +152,51 @@ def set_bot_version(bot_version: str) -> None:
     global version
     version = bot_version
 
+def get_delivery_message(update: Update):
+    """Возвращает сообщение-адресат для ответа.
+
+    Обычное сообщение пользователя адресуется напрямую. Обновление от
+    inline-кнопки не содержит `update.message`: адресатом становится
+    сообщение бота, к которому привязана кнопка (`update.effective_message`).
+    Ответ так уходит в исходный чат и тему, а не в чат бота по умолчанию.
+    """
+
+    message = getattr(update, "message", None)
+    if message is not None:
+        return message
+    effective_message = getattr(update, "effective_message", None)
+    if effective_message is not None:
+        return effective_message
+    query = getattr(update, "callback_query", None)
+    return getattr(query, "message", None) if query is not None else None
+
+
 async def reply_text(update: Update, message:str)->None:
     logger.info(f"текст от модели: {message}")
     escaped_text, parse_mode = await clean_message(message)
-    await update.message.reply_text(escaped_text, parse_mode=parse_mode) # type: ignore
+    target = get_delivery_message(update)
+    if target is None:
+        logger.warning("Нет сообщения-адресата для ответа")
+        return
+    await target.reply_text(escaped_text, parse_mode=parse_mode)
 
             
 
 async def reply_service_text(update: Update, message:str)->None:
     escaped_text = escape_markdown(message, version=2)
-    await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE) # type: ignore
+    target = get_delivery_message(update)
+    if target is None:
+        logger.warning("Нет сообщения-адресата для сервисного ответа")
+        return
+    await target.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)
 
 async def reply_service_message(update: Update, message: str):
     """Отправляет сервисное сообщение и возвращает объект Message."""
     escaped_text = escape_markdown(message, version=2)
-    return await update.message.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)  # type: ignore
+    target = get_delivery_message(update)
+    if target is None:
+        raise ValueError("Нет сообщения-адресата для сервисного сообщения")
+    return await target.reply_text(f"_{escaped_text}_", parse_mode=MDv2_PARSE_MODE)
 
 
 async def animate_service_message(
@@ -202,6 +233,9 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await user_histories.set(user.id, []) # type: ignore
     await user_model.set(user.id, None) # type: ignore
     await clear_user_image_edit_session(user.id) # type: ignore
+    # Ожидание ответа пользователя отменяется до любого возобновления:
+    # иначе старый вопрос продолжил бы уже сброшенную задачу.
+    await invalidate_user_questions(user.id)
     # Удаляем файл, оставшийся от старых версий handle_photo.
     legacy_image_path = Path(f"user_{user.id}_image.jpg")
     try:

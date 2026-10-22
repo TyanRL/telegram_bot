@@ -134,6 +134,7 @@ class OpenRouterMediaError(Exception):
         total_known_cost: float = 0.0,
         fallback_used: bool = False,
         fallback_reason: str | None = None,
+        job_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -149,6 +150,9 @@ class OpenRouterMediaError(Exception):
         self.total_known_cost = total_known_cost
         self.fallback_used = fallback_used
         self.fallback_reason = fallback_reason
+        # Идентификатор уже принятой провайдером задачи: он не должен
+        # теряться при ошибке после создания задачи.
+        self.job_id = job_id
         self.provider_message = _safe_provider_message(provider_message)
         self.safe_provider_message = self.provider_message
 
@@ -211,6 +215,16 @@ class OpenRouterVideoCancelledError(OpenRouterMediaError):
 
 class OpenRouterVideoExpiredError(OpenRouterMediaError):
     default_reason = "video_expired"
+
+
+class OpenRouterVideoJobUnavailableError(OpenRouterMediaError):
+    """Провайдер больше не знает о ранее принятой задаче видео.
+
+    Отличается от недоступности модели при создании задачи: задача была
+    принята, но потеряна или истекла на стороне провайдера.
+    """
+
+    default_reason = "video_job_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -670,36 +684,53 @@ class OpenRouterService:
     async def generate_video(
         self,
         prompt: str,
-        reference_image: GeneratedImage | Sequence[GeneratedImage] | None = None,
-        options: VideoGenerationOptions | None = None,
+        options: VideoGenerationOptions,
+        reference_images: Sequence[GeneratedImage | bytes | str] = (),
     ) -> GeneratedVideo:
+        """Запускает генерацию видео с обязательной проверенной длительностью.
+
+        Единый актуальный контракт: упорядоченная последовательность
+        референсов и готовые параметры запуска, включая обязательную
+        длительность. Старые перегрузки для одиночного референса и запуск без
+        параметров не поддерживаются.
+        """
+
         if not prompt or not prompt.strip():
             raise OpenRouterUnsupportedParameterError(
                 "Запрос на генерацию видео пуст", reason="empty_prompt", operation="video"
             )
-        if reference_image is not None:
-            reference_images = (
-                [reference_image]
-                if isinstance(reference_image, GeneratedImage)
-                else list(reference_image)
+        if not isinstance(options, VideoGenerationOptions):
+            raise OpenRouterUnsupportedParameterError(
+                "Параметры генерации видео обязательны",
+                reason="unsupported_parameter",
+                operation="video",
             )
-            if not reference_images or any(not image.content for image in reference_images):
-                raise OpenRouterUnsupportedParameterError(
-                    "Список исходных изображений пуст или содержит пустое изображение",
-                    reason="invalid_source_image",
-                    operation="video",
-                )
-            reference_image = reference_images
+        selected_references = list(reference_images or ())
+        if any(not image.content for image in selected_references if isinstance(image, GeneratedImage)):
+            raise OpenRouterUnsupportedParameterError(
+                "Список исходных изображений содержит пустое изображение",
+                reason="invalid_source_image",
+                operation="video",
+            )
         from utils.openrouter_videos import generate
 
         client = self._require_client()
-        selected_options = options or VideoGenerationOptions(
-            timeout_seconds=self.config.video_timeout_seconds,
-            polling_interval_seconds=self.config.video_polling_interval_seconds,
+        selected_options = replace(
+            options,
+            timeout_seconds=options.timeout_seconds or self.config.video_timeout_seconds,
+            polling_interval_seconds=(
+                options.polling_interval_seconds
+                or self.config.video_polling_interval_seconds
+            ),
         )
         return await self._run(
             "video",
-            lambda: generate(prompt, reference_image, selected_options, client=client),
+            lambda: generate(
+                prompt,
+                selected_options,
+                selected_references,
+                client=client,
+            ),
         )
 
     @staticmethod

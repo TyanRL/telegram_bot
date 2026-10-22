@@ -10,16 +10,51 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 import yaml
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:  # pragma: no cover - только для аннотаций
+    from core.video_requests import VideoModelProfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 _IMAGE_RESOLUTIONS = frozenset({"768", "1K", "1.5K", "2K", "4K"})
 _IMAGE_ROUTING_MODES = frozenset({"auto", "pro_only"})
+# Разрешения, поддерживаемые Video API OpenRouter.
+_VIDEO_RESOLUTIONS = frozenset({"480p", "720p", "768p", "1080p", "1K", "2K", "4K"})
+# Пропорции, поддерживаемые Video API OpenRouter.
+_VIDEO_ASPECT_RATIOS = frozenset(
+    {"16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"}
+)
+# Параметры видео, которые допустимы в секции 'media' рабочей конфигурации.
+_MEDIA_VIDEO_OPTIONS = frozenset(
+    {
+        "video_model",
+        "video_resolution",
+        "video_aspect_ratio",
+        "video_allowed_durations",
+        "video_duration_presets",
+        "video_allowed_aspect_ratios",
+        "video_max_references",
+        "video_generate_audio",
+        "video_timeout_seconds",
+        "video_polling_interval_seconds",
+        "video_index",
+    }
+)
+# Устаревшие видеопараметры: объяснение отказа даётся пользователю прямо в ошибке.
+_LEGACY_MEDIA_OPTIONS = {
+    "video_duration": (
+        "длительность видео выбирает пользователь, допустимые значения задаёт "
+        "video_allowed_durations"
+    ),
+    "video_size": (
+        "альтернативный размер удалён, рабочее разрешение задаёт video_resolution"
+    ),
+}
 
 DEFAULT_SYSTEM_PROMPT = """Вы — личный помощник, который СЖАТО И КРАТКО отвечает на вопросы пользователя. Время по Москве — {local_time}.
 1. Картинки сессии доступны для чтения и пронумерованы в порядке загрузки/создания; при просьбе описать или сравнить их используй все изображения, переданные в текущем сообщении.
@@ -27,10 +62,12 @@ DEFAULT_SYSTEM_PROMPT = """Вы — личный помощник, которы�
 3. Если пользователь просит создать картинку с нуля, используй generate_image даже при наличии других картинок: новая картинка добавится в сессию. Если это повтор неудачной генерации с нуля, снова используй generate_image, восстанови исходную полную инструкцию и добавь только актуальные уточнения пользователя; не превращай неудачный результат в референс.
 4. Если пользователь просит изменить, стилизовать, перерисовать, улучшить или объединить картинки, используй generate_image_from_image. Указывай image_indices с 1-based номерами конкретных картинок, если пользователь их уточнил; иначе используются все картинки сессии. При повторе неудачного редактирования используй исходные референсы той операции, а не неудачный результат вместо них.
 5. Повторяя неудачный результат, передавай полную содержательную инструкцию с исходными требованиями и уточнениями, а не краткое «попробуй ещё раз»; не выдумывай новых пожеланий от себя.
-6. Если пользователь просит видео, анимацию или оживить изображение, используй generate_video. Указывай image_indices, если пользователь выбрал конкретные референсы; иначе используются все картинки сессии.
+6. Если пользователь просит видео, анимацию или оживить изображение, используй generate_video. Указывай image_indices в том порядке, в каком пользователь назвал картинки (например, «картинки 3, 1, 2» означают третью, первую, затем вторую); если пользователь референсы не выбрал, используются все картинки сессии. Порядок image_indices значим: референсы передаются провайдеру именно в указанном порядке, а не в порядке номеров. Первому и последнему референсу автоматически не назначается роль начального или конечного кадра: не обещай пользователю последовательность сцен.
 7. Промпты для генерации видео и изображений создавай на английском языке; если результат генерации требует текст, этот текст не обязательно должен быть на английском.
 8. Не выдумывай номера изображений: доступны только номера, явно перечисленные в контексте.
 9. Не рассказывай о внутренней маршрутизации моделей без прямого запроса; не обещать пользователю разрешение выше 1K.
+10. Если для выполнения задачи не хватает существенного параметра, который пользователь не указал, задай уточняющий вопрос инструментом ask_user_question: передай текст вопроса и от одного до трёх готовых вариантов ответа с короткими уникальными идентификаторами (id) и понятными подписями (label). Кнопка «Свой ответ» добавляется приложением автоматически и не может быть отключена. Не придумывай ответ за пользователя и не продолжай задачу без его ответа. Не добавляй бессмысленные варианты ради ровно трёх.
+11. Вопрос о длительности видео задаёт сам инструмент generate_video, когда пользователь не назвал длительность явно. Не вызывай ask_user_question для длительности видео параллельно и не придумывай duration в аргументах: значение duration, придуманное тобой, согласием пользователя не является. Длительность принимается только из однозначного указания пользователя с единицами измерения («на 12 секунд») либо из проверенного ответа на вопрос сервера.
 """
 
 
@@ -80,6 +117,69 @@ def _optional_string(section: Mapping[str, Any], name: str, default: str | None 
             f"Параметр '{name}' должен иметь тип str или null, получен {type(value).__name__}"
         )
     return value
+
+
+def _int_tuple(
+    section: Mapping[str, Any], name: str, default: tuple[int, ...]
+) -> tuple[int, ...]:
+    """Читает список целых чисел без молчаливого приведения типов."""
+
+    if name not in section:
+        return tuple(default)
+    value = section[name]
+    if not isinstance(value, list):
+        raise SettingsError(f"Параметр '{name}' должен быть списком целых чисел")
+    items: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise SettingsError(
+                f"Параметр '{name}' должен содержать только целые числа, "
+                f"получено {type(item).__name__}"
+            )
+        items.append(item)
+    return tuple(items)
+
+
+def _str_tuple(
+    section: Mapping[str, Any], name: str, default: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Читает список непустых строк без молчаливого приведения типов."""
+
+    if name not in section:
+        return tuple(default)
+    value = section[name]
+    if not isinstance(value, list):
+        raise SettingsError(f"Параметр '{name}' должен быть списком строк")
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise SettingsError(
+                f"Параметр '{name}' должен содержать только непустые строки"
+            )
+        items.append(item)
+    return tuple(items)
+
+
+def _reject_unknown_media_options(section: Mapping[str, Any]) -> None:
+    """Отклоняет устаревшие и неизвестные видеопараметры секции 'media'."""
+
+    unknown = sorted(
+        name
+        for name in section
+        if name.startswith("video_") and name not in _MEDIA_VIDEO_OPTIONS
+    )
+    if not unknown:
+        return
+    details: list[str] = []
+    for name in unknown:
+        hint = _LEGACY_MEDIA_OPTIONS.get(name)
+        details.append(
+            f"'{name}'" + (f" — {hint}" if hint else " — неизвестный параметр видео")
+        )
+    raise SettingsError(
+        "Секция 'media' содержит неподдерживаемые видеопараметры: "
+        + "; ".join(details)
+    )
 
 
 def _positive(name: str, value: int | float) -> None:
@@ -140,6 +240,8 @@ class ApplicationSettings:
     concurrency_limit: int = 10
     log_level: str = "INFO"
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    # Срок ожидания ответа пользователя на вопрос (универсальный и видео).
+    question_timeout_seconds: int = 900
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,12 +297,22 @@ class MediaSettings:
     image_generation_count: int = 1
     image_edit_count: int = 1
     max_session_images: int = 10
-    video_model: str = "alibaba/wan-3.0"
+    # Активный видеопрофиль: один на всё приложение.
+    video_model: str = "alibaba/wan-3.0-prime"
     video_resolution: str = "480p"
     video_aspect_ratio: str | None = None
-    video_duration: int | None = 15
+    video_allowed_durations: tuple[int, ...] = tuple(range(2, 31))
+    video_duration_presets: tuple[int, ...] = (5, 10, 15, 20, 30)
+    video_allowed_aspect_ratios: tuple[str, ...] = (
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+    )
+    video_max_references: int = 10
     video_generate_audio: bool | None = None
-    video_size: str | None = None
     video_timeout_seconds: float = 360.0
     video_polling_interval_seconds: float = 5.0
     video_index: int = 0
@@ -365,6 +477,8 @@ class Settings:
         if not isinstance(self.media.image_fallback_enabled, bool):
             raise SettingsError("Параметр 'media.image_fallback_enabled' должен иметь тип bool")
 
+        self._validate_video_profile()
+
         positive_ints = {
             "application.max_history_length": self.application.max_history_length,
             "application.max_tool_rounds": self.application.max_tool_rounds,
@@ -418,6 +532,128 @@ class Settings:
             )
         return self
 
+    @property
+    def video_profile(self) -> "VideoModelProfile":
+        """Активный видеопрофиль приложения.
+
+        Профиль собирается из настроек и содержит модель, рабочее разрешение,
+        допустимые длительности, варианты кнопок длительности, доступные пропорции
+        и предел референсов. Остальные слои получают готовый профиль, а не
+        собственные константы модели.
+        """
+
+        from core.video_requests import VideoModelProfile
+
+        return VideoModelProfile(
+            model=self.media.video_model,
+            resolution=self.media.video_resolution,
+            allowed_durations=self.media.video_allowed_durations,
+            duration_presets=self.media.video_duration_presets,
+            allowed_aspect_ratios=self.media.video_allowed_aspect_ratios,
+            max_references=self.media.video_max_references,
+        )
+
+    def _validate_video_profile(self) -> None:
+        """Проверяет согласованность активного видеопрофиля."""
+
+        if not isinstance(self.media.video_model, str) or not self.media.video_model.strip():
+            raise SettingsError(
+                "Параметр 'media.video_model' должен быть непустым строковым идентификатором"
+            )
+        if (
+            not isinstance(self.media.video_resolution, str)
+            or self.media.video_resolution not in _VIDEO_RESOLUTIONS
+        ):
+            allowed_resolutions = ", ".join(sorted(_VIDEO_RESOLUTIONS))
+            raise SettingsError(
+                "Параметр 'media.video_resolution' должен быть одним из: "
+                f"{allowed_resolutions}"
+            )
+        if self.media.video_aspect_ratio is not None and (
+            not isinstance(self.media.video_aspect_ratio, str)
+            or self.media.video_aspect_ratio not in _VIDEO_ASPECT_RATIOS
+        ):
+            allowed_ratios = ", ".join(sorted(_VIDEO_ASPECT_RATIOS))
+            raise SettingsError(
+                "Параметр 'media.video_aspect_ratio' должен быть null или одним из: "
+                f"{allowed_ratios}"
+            )
+
+        allowed_durations = self.media.video_allowed_durations
+        if not allowed_durations:
+            raise SettingsError(
+                "Параметр 'media.video_allowed_durations' должен содержать хотя бы одно значение"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in allowed_durations
+        ):
+            raise SettingsError(
+                "Параметр 'media.video_allowed_durations' должен содержать только "
+                "положительные целые числа"
+            )
+        if len(set(allowed_durations)) != len(allowed_durations):
+            raise SettingsError(
+                "Параметр 'media.video_allowed_durations' не должен содержать повторов"
+            )
+
+        presets = self.media.video_duration_presets
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in presets
+        ):
+            raise SettingsError(
+                "Параметр 'media.video_duration_presets' должен содержать только "
+                "положительные целые числа"
+            )
+        if not presets:
+            raise SettingsError(
+                "Параметр 'media.video_duration_presets' должен содержать хотя бы одно значение"
+            )
+        unknown_presets = [
+            value for value in presets if value not in set(allowed_durations)
+        ]
+        if unknown_presets:
+            raise SettingsError(
+                "Параметр 'media.video_duration_presets' содержит значения, отсутствующие "
+                "в 'media.video_allowed_durations': "
+                + ", ".join(str(value) for value in unknown_presets)
+            )
+
+        aspect_ratios = self.media.video_allowed_aspect_ratios
+        if not aspect_ratios:
+            raise SettingsError(
+                "Параметр 'media.video_allowed_aspect_ratios' должен содержать хотя бы одно значение"
+            )
+        for ratio in aspect_ratios:
+            if not isinstance(ratio, str) or ratio not in _VIDEO_ASPECT_RATIOS:
+                allowed_ratios = ", ".join(sorted(_VIDEO_ASPECT_RATIOS))
+                raise SettingsError(
+                    "Параметр 'media.video_allowed_aspect_ratios' должен содержать только "
+                    f"поддерживаемые пропорции: {allowed_ratios}"
+                )
+
+        max_references = self.media.video_max_references
+        if (
+            isinstance(max_references, bool)
+            or not isinstance(max_references, int)
+            or max_references < 1
+        ):
+            raise SettingsError(
+                "Параметр 'media.video_max_references' должен быть положительным целым числом"
+            )
+
+        question_timeout = self.application.question_timeout_seconds
+        if (
+            isinstance(question_timeout, bool)
+            or not isinstance(question_timeout, int)
+            or question_timeout <= 0
+        ):
+            raise SettingsError(
+                "Параметр 'application.question_timeout_seconds' должен быть положительным "
+                "целым числом"
+            )
+
     def require_runtime_secrets(self) -> None:
         """Проверяет секреты, без которых основной процесс не может стартовать."""
 
@@ -450,6 +686,7 @@ class Settings:
 
     @staticmethod
     def _application(section: Mapping[str, Any]) -> ApplicationSettings:
+        defaults = ApplicationSettings()
         thresholds = section.get("history_warning_thresholds", [8, 14])
         if not isinstance(thresholds, list):
             raise SettingsError(
@@ -464,6 +701,9 @@ class Settings:
             concurrency_limit=_value(section, "concurrency_limit", 10, int),
             log_level=_value(section, "log_level", "INFO", str),
             system_prompt=_value(section, "system_prompt", DEFAULT_SYSTEM_PROMPT, str),
+            question_timeout_seconds=_value(
+                section, "question_timeout_seconds", defaults.question_timeout_seconds, int
+            ),
         )
 
     @staticmethod
@@ -532,6 +772,7 @@ class Settings:
     @staticmethod
     def _media(section: Mapping[str, Any]) -> MediaSettings:
         defaults = MediaSettings()
+        _reject_unknown_media_options(section)
         return MediaSettings(
             image_generation_model=_value(section, "image_generation_model", defaults.image_generation_model, str),
             image_edit_model=_value(section, "image_edit_model", defaults.image_edit_model, str),
@@ -555,9 +796,19 @@ class Settings:
             video_model=_value(section, "video_model", defaults.video_model, str),
             video_resolution=_value(section, "video_resolution", defaults.video_resolution, str),
             video_aspect_ratio=_optional_string(section, "video_aspect_ratio", defaults.video_aspect_ratio),
-            video_duration=_value(section, "video_duration", defaults.video_duration, (int, type(None))),
+            video_allowed_durations=_int_tuple(
+                section, "video_allowed_durations", defaults.video_allowed_durations
+            ),
+            video_duration_presets=_int_tuple(
+                section, "video_duration_presets", defaults.video_duration_presets
+            ),
+            video_allowed_aspect_ratios=_str_tuple(
+                section, "video_allowed_aspect_ratios", defaults.video_allowed_aspect_ratios
+            ),
+            video_max_references=_value(
+                section, "video_max_references", defaults.video_max_references, int
+            ),
             video_generate_audio=_value(section, "video_generate_audio", defaults.video_generate_audio, (bool, type(None))),
-            video_size=_optional_string(section, "video_size", defaults.video_size),
             video_timeout_seconds=_value(section, "video_timeout_seconds", defaults.video_timeout_seconds, (int, float)),
             video_polling_interval_seconds=_value(
                 section,

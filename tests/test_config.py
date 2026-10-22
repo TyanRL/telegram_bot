@@ -10,6 +10,10 @@ from core.config import Settings, SettingsError
 
 FLUX_MODEL = "black-forest-labs/flux-3-image"
 KLEIN_MODEL = "black-forest-labs/flux-3-image-klein"
+VIDEO_MODEL = "alibaba/wan-3.0-prime"
+VIDEO_RESOLUTION = "480p"
+VIDEO_DURATION_PRESETS = (5, 10, 15, 20, 30)
+VIDEO_ASPECT_RATIOS = ("16:9", "9:16", "1:1", "4:3", "3:4", "21:9")
 
 
 class SettingsTests(unittest.TestCase):
@@ -160,6 +164,174 @@ telegram:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(FileNotFoundError):
                 Settings.from_yaml(Path(directory) / "missing.yaml", environ={})
+
+
+class VideoProfileSettingsTests(unittest.TestCase):
+    def _load(self, content: str) -> Settings:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text(content, encoding="utf-8")
+            return Settings.from_yaml(path, environ={})
+
+    def test_default_profile_is_prime_480p_with_five_presets(self) -> None:
+        loaded = self._load("{}")
+
+        self.assertEqual(loaded.media.video_model, VIDEO_MODEL)
+        self.assertEqual(loaded.media.video_resolution, VIDEO_RESOLUTION)
+        self.assertEqual(loaded.media.video_duration_presets, VIDEO_DURATION_PRESETS)
+        self.assertEqual(loaded.media.video_allowed_aspect_ratios, VIDEO_ASPECT_RATIOS)
+        self.assertEqual(loaded.media.video_max_references, 10)
+        self.assertEqual(loaded.media.video_allowed_durations, tuple(range(2, 31)))
+        self.assertEqual(loaded.application.question_timeout_seconds, 900)
+
+    def test_active_profile_is_exposed_from_settings(self) -> None:
+        loaded = self._load("{}")
+
+        profile = loaded.video_profile
+
+        self.assertEqual(profile.model, VIDEO_MODEL)
+        self.assertEqual(profile.resolution, VIDEO_RESOLUTION)
+        self.assertEqual(profile.allowed_durations, tuple(range(2, 31)))
+        self.assertEqual(profile.duration_presets, VIDEO_DURATION_PRESETS)
+        self.assertEqual(profile.allowed_aspect_ratios, VIDEO_ASPECT_RATIOS)
+        self.assertEqual(profile.max_references, 10)
+
+    def test_working_config_uses_prime_480p(self) -> None:
+        loaded = Settings.from_yaml(environ={})
+
+        self.assertEqual(loaded.media.video_model, VIDEO_MODEL)
+        self.assertEqual(loaded.media.video_resolution, VIDEO_RESOLUTION)
+        self.assertEqual(loaded.media.video_duration_presets, VIDEO_DURATION_PRESETS)
+        self.assertEqual(loaded.application.question_timeout_seconds, 900)
+        self.assertEqual(loaded.video_profile.model, VIDEO_MODEL)
+        self.assertEqual(loaded.video_profile.resolution, VIDEO_RESOLUTION)
+
+    def test_removed_video_fields_are_rejected(self) -> None:
+        removed_fields = (
+            "video_duration: 15",
+            "video_duration: null",
+            "video_size: '1280x720'",
+            "video_size: null",
+        )
+
+        for media_setting in removed_fields:
+            with self.subTest(media_setting=media_setting):
+                with self.assertRaises(SettingsError):
+                    self._load(f"media:\n  {media_setting}\n")
+
+    def test_unknown_video_fields_are_rejected(self) -> None:
+        with self.assertRaises(SettingsError):
+            self._load("media:\n  video_frame_images: 2\n")
+
+    def test_legacy_video_fields_error_mentions_replacement(self) -> None:
+        with self.assertRaises(SettingsError) as caught:
+            self._load("media:\n  video_duration: 15\n")
+
+        message = str(caught.exception)
+        self.assertIn("video_duration", message)
+        self.assertIn("video_allowed_durations", message)
+
+    def test_invalid_video_profile_values_are_rejected(self) -> None:
+        invalid_media_sections = (
+            "video_model: ''",
+            "video_model: 123",
+            "video_resolution: '240p'",
+            "video_resolution: 480",
+            "video_aspect_ratio: '5:4'",
+            "video_aspect_ratio: 16",
+            "video_allowed_durations: []",
+            "video_allowed_durations: [5, 10.5]",
+            "video_allowed_durations: [5, true]",
+            "video_allowed_durations: [5, 0]",
+            "video_allowed_durations: [5, -5]",
+            "video_allowed_durations: [5, 5]",
+            "video_allowed_durations: 5",
+            "video_duration_presets: []",
+            "video_duration_presets: [5, 10.5]",
+            "video_duration_presets: [5, true]",
+            "video_duration_presets: [5, 45]",
+            "video_allowed_aspect_ratios: []",
+            "video_allowed_aspect_ratios: ['5:4']",
+            "video_allowed_aspect_ratios: [16]",
+            "video_allowed_aspect_ratios: '16:9'",
+            "video_max_references: 0",
+            "video_max_references: -1",
+            "video_max_references: true",
+            "video_max_references: 1.5",
+        )
+
+        for media_setting in invalid_media_sections:
+            with self.subTest(media_setting=media_setting):
+                with self.assertRaises(SettingsError):
+                    self._load(f"media:\n  {media_setting}\n")
+
+    def test_duration_presets_must_be_subset_of_allowed_durations(self) -> None:
+        loaded = self._load("{}")
+
+        with self.assertRaises(SettingsError):
+            replace(
+                loaded,
+                media=replace(
+                    loaded.media,
+                    video_allowed_durations=(4, 8),
+                    video_duration_presets=(4, 8, 16),
+                ),
+            ).validate()
+
+    def test_replaced_profile_changes_validation_without_code_changes(self) -> None:
+        loaded = self._load("{}")
+
+        replaced = replace(
+            loaded,
+            media=replace(
+                loaded.media,
+                video_model="test/other-video-model",
+                video_resolution="720p",
+                video_allowed_durations=(4, 8),
+                video_duration_presets=(4, 8),
+                video_allowed_aspect_ratios=("16:9",),
+                video_max_references=3,
+            ),
+        ).validate()
+
+        profile = replaced.video_profile
+        self.assertEqual(profile.model, "test/other-video-model")
+        self.assertEqual(profile.resolution, "720p")
+        self.assertEqual(profile.allowed_durations, (4, 8))
+        self.assertEqual(profile.duration_presets, (4, 8))
+        self.assertEqual(profile.allowed_aspect_ratios, ("16:9",))
+        self.assertEqual(profile.max_references, 3)
+
+    def test_invalid_question_timeout_is_rejected(self) -> None:
+        for application_setting in (
+            "question_timeout_seconds: 0",
+            "question_timeout_seconds: -1",
+            "question_timeout_seconds: true",
+            "question_timeout_seconds: 1.5",
+        ):
+            with self.subTest(application_setting=application_setting):
+                with self.assertRaises(SettingsError):
+                    self._load(f"application:\n  {application_setting}\n")
+
+    def test_valid_video_profile_is_read_from_yaml(self) -> None:
+        loaded = self._load(
+            """
+media:
+  video_model: "test/other-video-model"
+  video_resolution: "720p"
+  video_allowed_durations: [4, 8]
+  video_duration_presets: [4, 8]
+  video_allowed_aspect_ratios: ["16:9"]
+  video_max_references: 3
+"""
+        )
+
+        self.assertEqual(loaded.media.video_model, "test/other-video-model")
+        self.assertEqual(loaded.media.video_resolution, "720p")
+        self.assertEqual(loaded.media.video_allowed_durations, (4, 8))
+        self.assertEqual(loaded.media.video_duration_presets, (4, 8))
+        self.assertEqual(loaded.media.video_allowed_aspect_ratios, ("16:9",))
+        self.assertEqual(loaded.media.video_max_references, 3)
 
 
 if __name__ == "__main__":

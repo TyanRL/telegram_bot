@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 from copy import deepcopy
 import os
 import unittest
@@ -41,6 +42,7 @@ from core.tool_handlers.media import (
     handle_generate_image_from_image,
     handle_generate_video,
 )
+from core.video_requests import validate_duration
 from PIL import Image
 from utils.openrouter_client import OpenRouterResponseError
 
@@ -120,6 +122,15 @@ class SessionImageTests(unittest.TestCase):
 
         self.assertEqual((first_number, second_number), (1, 2))
         self.assertEqual(get_session_images(session), [_image(1) | {"source_kind": "uploaded"}, _image(2) | {"source_kind": "generated"}])
+
+    def test_append_stores_only_the_unified_images_list(self) -> None:
+        session: dict[str, object] = {"images": [], "history": []}
+
+        append_image_to_session(session, _image(1), "uploaded")
+
+        self.assertEqual(set(session), {"images", "history"})
+        self.assertNotIn("current_image", session)
+        self.assertNotIn("original_image", session)
 
     def test_selection_uses_one_based_indices_and_deduplicates(self) -> None:
         session: dict[str, object] = {
@@ -245,15 +256,12 @@ class SessionImageTests(unittest.TestCase):
         self.assertNotIn("0.123", summary)
         self.assertNotIn(images[1]["image"], summary)
 
-    def test_legacy_current_image_session_remains_readable(self) -> None:
-        legacy_image = _image(1)
+    def test_session_without_images_list_has_no_images(self) -> None:
+        """Единственный актуальный формат сессии — список ``images``."""
 
-        self.assertEqual(
-            get_session_images({"current_image": legacy_image}),
-            [legacy_image],
-        )
+        self.assertEqual(get_session_images({"current_image": _image(1)}), [])
 
-    def test_rollback_route_keeps_legacy_and_new_session_images_readable(self) -> None:
+    def test_rollback_route_keeps_session_images_readable(self) -> None:
         legacy_image = _image(1) | {"source_kind": "generated"}
         current_image = _image(2) | {
             "source_kind": "edit",
@@ -277,7 +285,6 @@ class SessionImageTests(unittest.TestCase):
         }
         session = {
             "images": [legacy_image, current_image],
-            "current_image": current_image,
             "history": [{"kind": "edit", "prompt": "Preserve the engraving"}],
         }
         original_session = deepcopy(session)
@@ -810,18 +817,27 @@ class MediaToolImageSelectionTests(unittest.TestCase):
         send_image.assert_awaited_once_with(update, image)
         status_message.delete.assert_awaited_once_with()
 
-    def test_video_tool_passes_selected_reference_images(self) -> None:
-        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
-        video = SimpleNamespace(cleanup=Mock())
-        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
-        status_message = SimpleNamespace(edit_text=AsyncMock())
-        ctx = SimpleNamespace(
-            update=SimpleNamespace(effective_user=SimpleNamespace(id=124)),
+    def _video_context(
+        self,
+        user_id: int,
+        service: Any,
+        user_text: str | None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            update=SimpleNamespace(effective_user=SimpleNamespace(id=user_id)),
             openrouter_service=service,
             context_tokens=0,
             completion_tokens=0,
+            user_text=user_text,
         )
 
+    def _run_video_tool(
+        self,
+        ctx: SimpleNamespace,
+        args: dict[str, Any],
+        session: dict[str, Any] | None,
+        service: Any,
+    ):
         with (
             patch(
                 "core.tool_handlers.media.get_user_image_edit_session",
@@ -829,58 +845,7 @@ class MediaToolImageSelectionTests(unittest.TestCase):
             ),
             patch(
                 "core.tool_handlers.media.reply_service_message",
-                new=AsyncMock(return_value=status_message),
-            ),
-            patch("core.tool_handlers.media.animate_service_message", new=AsyncMock()),
-            patch(
-                "core.tool_handlers.media.send_video_to_telegram",
-                new=AsyncMock(return_value=True),
-            ),
-            patch("core.tool_handlers.media.add_user_image_session_history", new=AsyncMock()),
-        ):
-            result = asyncio.run(
-                handle_generate_video(
-                    ctx,
-                    {"prompt": "animate selected", "image_indices": [1, 3]},
-                )
-            )
-
-        passed_images = service.generate_video.await_args.args[1]
-        self.assertEqual(
-            [image.content for image in passed_images],
-            [
-                base64.b64decode(_image(1)["image"]),
-                base64.b64decode(_image(3)["image"]),
-            ],
-        )
-        self.assertTrue(result.output["ok"])
-        video.cleanup.assert_called_once_with()
-
-    def test_video_tool_limits_references_to_the_latest_ten(self) -> None:
-        max_references = min(10, settings.media.max_session_images)
-        image_count = max_references + 2
-        session = {
-            "images": [_image(index) for index in range(1, image_count + 1)],
-            "history": [],
-        }
-        video = SimpleNamespace(cleanup=Mock())
-        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
-        status_message = SimpleNamespace(edit_text=AsyncMock())
-        ctx = SimpleNamespace(
-            update=SimpleNamespace(effective_user=SimpleNamespace(id=129)),
-            openrouter_service=service,
-            context_tokens=0,
-            completion_tokens=0,
-        )
-
-        with (
-            patch(
-                "core.tool_handlers.media.get_user_image_edit_session",
-                new=AsyncMock(return_value=session),
-            ),
-            patch(
-                "core.tool_handlers.media.reply_service_message",
-                new=AsyncMock(return_value=status_message),
+                new=AsyncMock(return_value=SimpleNamespace(edit_text=AsyncMock())),
             ),
             patch("core.tool_handlers.media.animate_service_message", new=AsyncMock()),
             patch(
@@ -892,20 +857,614 @@ class MediaToolImageSelectionTests(unittest.TestCase):
                 new=AsyncMock(),
             ),
         ):
-            result = asyncio.run(handle_generate_video(ctx, {"prompt": "animate"}))
+            return asyncio.run(handle_generate_video(ctx, args))
 
-        passed_images = service.generate_video.await_args.args[1]
-        first_reference_index = image_count - max_references + 1
-        self.assertEqual(len(passed_images), max_references)
+    def test_video_tool_passes_selected_reference_images(self) -> None:
+        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(
+            124,
+            service,
+            "Оживи картинки 1 и 3 на 10 секунд",
+        )
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate selected", "image_indices": [1, 3]},
+            session,
+            service,
+        )
+
+        passed_options = service.generate_video.await_args.args[1]
+        passed_images = service.generate_video.await_args.kwargs["reference_images"]
+        self.assertEqual(passed_options.duration, 10)
+        self.assertEqual(passed_options.model, settings.media.video_model)
+        self.assertEqual(passed_options.resolution, settings.media.video_resolution)
         self.assertEqual(
             [image.content for image in passed_images],
             [
-                base64.b64decode(_image(index)["image"])
-                for index in range(first_reference_index, image_count + 1)
+                base64.b64decode(_image(1)["image"]),
+                base64.b64decode(_image(3)["image"]),
             ],
         )
         self.assertTrue(result.output["ok"])
         video.cleanup.assert_called_once_with()
+
+    def test_video_tool_keeps_user_order_of_references(self) -> None:
+        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(
+            132,
+            service,
+            "Оживи картинки 3, 1, 2 на 10 секунд",
+        )
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate selected", "image_indices": [1, 2, 3]},
+            session,
+            service,
+        )
+
+        passed_images = service.generate_video.await_args.kwargs["reference_images"]
+        self.assertEqual(
+            [image.content for image in passed_images],
+            [
+                base64.b64decode(_image(3)["image"]),
+                base64.b64decode(_image(1)["image"]),
+                base64.b64decode(_image(2)["image"]),
+            ],
+        )
+        self.assertTrue(result.output["ok"])
+
+    def test_video_tool_deduplicates_repeated_reference_numbers(self) -> None:
+        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(
+            133,
+            service,
+            "Оживи картинки 3, 1, 3, 2 на 10 секунд",
+        )
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate selected", "image_indices": [3, 1, 3, 2]},
+            session,
+            service,
+        )
+
+        passed_images = service.generate_video.await_args.kwargs["reference_images"]
+        self.assertEqual(
+            [image.content for image in passed_images],
+            [
+                base64.b64decode(_image(3)["image"]),
+                base64.b64decode(_image(1)["image"]),
+                base64.b64decode(_image(2)["image"]),
+            ],
+        )
+        self.assertTrue(result.output["ok"])
+
+    def test_video_tool_rejects_reference_limit_without_truncation(self) -> None:
+        max_references = settings.media.video_max_references
+        image_count = max_references + 2
+        session = {
+            "images": [_image(index) for index in range(1, image_count + 1)],
+            "history": [],
+        }
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(
+            129,
+            service,
+            "Оживи все картинки на 5 секунд",
+        )
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, session, service)
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+        self.assertIn("Уменьшите набор явно", result.output["message"])
+
+    def test_video_tool_requires_explicit_duration(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(131, service, "Оживи картинку")
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, session, service)
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+        self.assertTrue(result.output["requires_duration"])
+
+    def test_video_tool_ignores_duration_invented_by_the_model(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(134, service, "Оживи картинку")
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate", "duration": 15},
+            session,
+            service,
+        )
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+        self.assertTrue(result.output["requires_duration"])
+
+    def test_video_tool_rejects_unsupported_explicit_duration(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(135, service, "Оживи картинку на 45 секунд")
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, session, service)
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+        self.assertIn("45", result.output["message"])
+
+    def test_video_tool_asks_duration_for_ambiguous_request(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(136, service, "Оживи картинку примерно на 10 секунд")
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, session, service)
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+        self.assertTrue(result.output["requires_duration"])
+
+    def test_video_tool_rejects_invalid_reference_numbers(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(137, service, "Оживи картинку на 10 секунд")
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate", "image_indices": [0]},
+            session,
+            service,
+        )
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+
+    def test_video_tool_rejects_boolean_and_fractional_reference_numbers(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(138, service, "Оживи картинку на 10 секунд")
+
+        for indices in ([True], [1.5], ["1"]):
+            with self.subTest(indices=indices):
+                result = self._run_video_tool(
+                    ctx,
+                    {"prompt": "animate", "image_indices": indices},
+                    session,
+                    service,
+                )
+
+                service.generate_video.assert_not_awaited()
+                self.assertFalse(result.output["ok"])
+
+    def test_video_tool_rejects_corrupted_reference_image(self) -> None:
+        broken = _image(1) | {"image": "not-a-valid-base64-image!!"}
+        session = {"images": [broken], "history": []}
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(139, service, "Оживи картинку на 10 секунд")
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, session, service)
+
+        service.generate_video.assert_not_awaited()
+        self.assertFalse(result.output["ok"])
+
+    def test_video_tool_without_images_uses_text_mode(self) -> None:
+        video = SimpleNamespace(cleanup=Mock())
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(140, service, "Сделай видео на 10 секунд")
+
+        result = self._run_video_tool(ctx, {"prompt": "animate"}, None, service)
+
+        passed_images = service.generate_video.await_args.kwargs["reference_images"]
+        self.assertEqual(list(passed_images), [])
+        self.assertTrue(result.output["ok"])
+
+    def test_video_tool_result_reports_actual_profile_and_references(self) -> None:
+        """Структурированный результат содержит фактические параметры профиля."""
+
+        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
+        video = SimpleNamespace(
+            cleanup=Mock(),
+            cost=0.31,
+            metadata={"job_id": "job-42"},
+        )
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(144, service, "Оживи картинки 3, 1, 2 на 10 секунд")
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate", "image_indices": [1, 2, 3]},
+            session,
+            service,
+        )
+
+        output = result.output
+        self.assertEqual(output["model"], settings.media.video_model)
+        self.assertEqual(output["resolution"], settings.media.video_resolution)
+        self.assertEqual(output["duration"], 10)
+        self.assertEqual(output["reference_indices"], [3, 1, 2])
+        self.assertEqual(output["job_id"], "job-42")
+        self.assertEqual(output["cost"], 0.31)
+        self.assertFalse(output["billing_unknown"])
+        # Бинарное содержимое картинок и data URL в результат не попадают.
+        serialized = json.dumps(output, default=str)
+        self.assertNotIn("data:image", serialized)
+        self.assertNotIn("base64", serialized)
+
+    def test_video_tool_result_marks_unknown_cost(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock(), cost=None, metadata={})
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(145, service, "Оживи картинку на 10 секунд")
+
+        result = self._run_video_tool(
+            ctx,
+            {"prompt": "animate"},
+            session,
+            service,
+        )
+
+        self.assertIsNone(result.output["cost"])
+        self.assertTrue(result.output["billing_unknown"])
+        self.assertIsNone(result.output["job_id"])
+
+    def test_video_delivery_failure_does_not_trigger_regeneration(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        video = SimpleNamespace(cleanup=Mock(), cost=None, metadata={})
+        service = SimpleNamespace(generate_video=AsyncMock(return_value=video))
+        ctx = self._video_context(146, service, "Оживи картинку на 10 секунд")
+
+        with (
+            patch(
+                "core.tool_handlers.media.get_user_image_edit_session",
+                new=AsyncMock(return_value=session),
+            ),
+            patch(
+                "core.tool_handlers.media.reply_service_message",
+                new=AsyncMock(return_value=SimpleNamespace(edit_text=AsyncMock())),
+            ),
+            patch("core.tool_handlers.media.animate_service_message", new=AsyncMock()),
+            patch(
+                "core.tool_handlers.media.send_video_to_telegram",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "core.tool_handlers.media.add_user_image_session_history",
+                new=AsyncMock(),
+            ),
+        ):
+            result = asyncio.run(
+                handle_generate_video(ctx, {"prompt": "animate"})
+            )
+
+        self.assertEqual(service.generate_video.await_count, 1)
+        self.assertFalse(result.output["ok"])
+        self.assertEqual(result.output["delivery"], "failed")
+        video.cleanup.assert_called_once_with()
+
+
+class VideoDraftSnapshotTests(unittest.TestCase):
+    """Снимок заявки не меняется от новых загрузок и инвалидируется сбросом."""
+
+    def _prepare(
+        self,
+        user_id: int,
+        session: dict[str, Any] | None,
+        user_text: str,
+    ):
+        from core.tool_handlers.media import _prepare_video_draft
+
+        service = SimpleNamespace(generate_video=AsyncMock())
+        ctx = _media_context(user_id, service, user_text)
+        with patch(
+            "core.tool_handlers.media.get_user_image_edit_session",
+            new=AsyncMock(return_value=session),
+        ):
+            preparation = asyncio.run(
+                _prepare_video_draft(
+                    ctx,
+                    {"prompt": "animate", "image_indices": [1]},
+                )
+            )
+        return preparation
+
+    def test_new_upload_does_not_change_pending_draft(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        preparation = self._prepare(141, session, "Оживи картинку")
+
+        self.assertIsNotNone(preparation.draft)
+        draft = preparation.draft
+        assert draft is not None
+        self.assertEqual(draft.reference_indices, (1,))
+
+        # Новая загрузка пополняет сессию, но не меняет уже созданную заявку.
+        append_image_to_session(session, _image(2), "uploaded")
+
+        self.assertEqual(draft.reference_indices, (1,))
+        self.assertEqual(len(draft.reference_images), 1)
+        self.assertEqual(
+            [image["image"] for image in get_session_images(session)],
+            [_image(1)["image"], _image(2)["image"]],
+        )
+
+    def test_session_numbers_do_not_change_during_waiting(self) -> None:
+        session = {"images": [_image(1)], "history": []}
+        preparation = self._prepare(142, session, "Оживи картинку")
+
+        draft = preparation.draft
+        assert draft is not None
+        append_image_to_session(session, _image(2), "uploaded")
+
+        # Номера уже выбранных картинок в сессии остаются прежними.
+        self.assertEqual(draft.reference_indices, (1,))
+        self.assertEqual(len(get_session_images(session)), 2)
+
+    def test_reset_invalidates_pending_video_draft(self) -> None:
+        user_id = 143
+        session = {"images": [_image(1)], "history": []}
+        preparation = self._prepare(user_id, session, "Оживи картинку")
+
+        draft = preparation.draft
+        assert draft is not None
+        self.assertIsNotNone(draft.operation_id)
+
+        async def scenario() -> None:
+            await clear_user_image_edit_session(user_id)
+            with (
+                patch("core.state_and_commands.reply_service_text", new=AsyncMock()),
+                patch("core.state_and_commands.Path"),
+            ):
+                await reset(
+                    SimpleNamespace(effective_user=SimpleNamespace(id=user_id)),
+                    SimpleNamespace(),
+                )
+
+        asyncio.run(scenario())
+
+        self.assertIsNone(asyncio.run(get_user_image_edit_session(user_id)))
+        self.assertEqual(get_session_images(session), [_image(1)])
+
+    def test_replaced_profile_changes_validation_and_question_options(self) -> None:
+        from core.tool_handlers.media import build_duration_question_request
+        from core.video_requests import VideoModelProfile
+
+        profile = VideoModelProfile(
+            model="vendor/other-video-model",
+            resolution="720p",
+            allowed_durations=(4, 8),
+            duration_presets=(4, 8),
+            allowed_aspect_ratios=("16:9",),
+            max_references=2,
+        )
+
+        request = build_duration_question_request(profile)
+
+        self.assertEqual(
+            [option.payload for option in request.options],
+            [4, 8],
+        )
+        with self.assertRaises(ValueError):
+            validate_duration(12, profile)
+        self.assertEqual(validate_duration(8, profile), 8)
+
+    def test_replaced_video_profile_flows_through_question_continuation_and_delivery(self) -> None:
+        """Профиль меняется данными, а вопросы, continuation и доставка остаются общими."""
+
+        from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
+
+        from core.common_types import (
+            PendingToolCall,
+            QuestionAnswer,
+            QuestionAnswerKind,
+            QuestionAnswerMode,
+        )
+        from core.openai_api import resume_model_answer
+        from core.question_state import QuestionContinuationContext
+        from core.tool_handlers.media import (
+            _prepare_video_draft,
+            check_generate_video,
+        )
+
+        new_model = "vendor/compatible-video-model"
+        new_media = replace(
+            settings.media,
+            video_model=new_model,
+            video_resolution="720p",
+            video_aspect_ratio="16:9",
+            video_allowed_durations=(4, 8),
+            video_duration_presets=(4, 8),
+            video_allowed_aspect_ratios=("16:9",),
+            video_max_references=2,
+        )
+        replacement_settings = replace(settings, media=new_media).validate()
+        session = {"images": [_image(1), _image(2), _image(3)], "history": []}
+        service = SimpleNamespace(generate_video=AsyncMock())
+        ctx = _media_context(
+            147,
+            service,
+            "Оживи картинки 3, 1",
+        )
+
+        async def get_session(_user_id: int) -> dict[str, Any]:
+            return session
+
+        with (
+            patch("core.tool_handlers.media.settings", replacement_settings),
+            patch("core.tool_handlers.media.get_user_image_edit_session", new=AsyncMock(side_effect=get_session)),
+        ):
+            check = asyncio.run(
+                check_generate_video(
+                    cast(Any, ctx),
+                    {"prompt": "animate", "image_indices": [1, 2]},
+                )
+            )
+            profile = replacement_settings.video_profile
+            self.assertIsNotNone(check)
+            assert check is not None and check.video_request is not None
+            draft = check.video_request
+
+            self.assertEqual(profile.model, new_model)
+            self.assertEqual(profile.resolution, "720p")
+            self.assertEqual([option.payload for option in check.request.options], [4, 8])
+            self.assertEqual(draft.profile, profile)
+            self.assertEqual(draft.reference_indices, (3, 1))
+            self.assertEqual(
+            [image.content for image in draft.reference_images],
+            [
+                    base64.b64decode(cast(str, _image(3)["image"])),
+                    base64.b64decode(cast(str, _image(1)["image"])),
+                ],
+            )
+            with self.assertRaises(ValueError):
+                validate_duration(10, profile)
+            self.assertEqual(validate_duration(8, profile), 8)
+
+            over_limit = asyncio.run(
+                _prepare_video_draft(
+                    _media_context(148, service, "Оживи все картинки"),
+                    {"prompt": "animate"},
+                )
+            )
+            self.assertIsNone(over_limit.draft)
+            self.assertIn("не более 2", over_limit.error or "")
+
+            video = SimpleNamespace(
+                cleanup=Mock(),
+                cost=0.44,
+                metadata={"job_id": "profile-job"},
+            )
+            service.generate_video.return_value = video
+            continuation = QuestionContinuationContext(
+                response_id="resp-profile",
+                tool_calls=(
+                    PendingToolCall(
+                        call_id="call-profile-video",
+                        name="generate_video",
+                        arguments={"prompt": "animate"},
+                    ),
+                ),
+                model_name="gpt-5.6-terra",
+                original_user_text="Оживи картинки 3, 1",
+                context_tokens=120,
+                completion_tokens=24,
+                tool_round=1,
+                video_request=draft,
+                video_operation_id=draft.operation_id,
+                answer_mode=QuestionAnswerMode.VIDEO_REQUEST,
+            )
+            answer = QuestionAnswer(
+                question_id="profile-question",
+                kind=QuestionAnswerKind.OPTION,
+                text="8 с",
+                option_id="duration_8",
+                payload=8,
+            )
+            final_response = Response.model_construct(
+                id="resp-profile-final",
+                object="response",
+                created_at=0,
+                status="completed",
+                error=None,
+                incomplete_details=None,
+                instructions=None,
+                max_output_tokens=None,
+                model="gpt-5.6-terra",
+                output=[
+                    ResponseOutputMessage(
+                        id="msg-profile-final",
+                        content=[
+                            ResponseOutputText(
+                                annotations=[],
+                                text="Видео готово",
+                                type="output_text",
+                            )
+                        ],
+                        role="assistant",
+                        status="completed",
+                        type="message",
+                    )
+                ],
+                parallel_tool_calls=True,
+                temperature=None,
+                tool_choice="auto",
+                tools=[],
+                top_p=None,
+                truncation="disabled",
+                usage=None,
+                user=None,
+                metadata={},
+            )
+            update = SimpleNamespace(effective_user=SimpleNamespace(id=147))
+
+            with (
+                patch(
+                    "core.openai_api.get_simple_answer",
+                    new=AsyncMock(return_value=final_response),
+                ) as get_answer,
+                patch(
+                    "core.tool_handlers.media.reply_service_message",
+                    new=AsyncMock(return_value=SimpleNamespace(edit_text=AsyncMock())),
+                ),
+                patch("core.tool_handlers.media.animate_service_message", new=AsyncMock()),
+                patch(
+                    "core.tool_handlers.media.send_video_to_telegram",
+                    new=AsyncMock(return_value=True),
+                ) as deliver,
+                patch(
+                    "core.tool_handlers.media.add_user_image_session_history",
+                    new=AsyncMock(),
+                ),
+            ):
+                result = asyncio.run(
+                    resume_model_answer(
+                        cast(Any, update),
+                        cast(Any, SimpleNamespace()),
+                        continuation,
+                        answer,
+                        openrouter_service=cast(Any, service),
+                        question=check.request,
+                    )
+                )
+
+            self.assertEqual(result.bot_reply, "Видео готово")
+            self.assertEqual(get_answer.await_count, 1)
+            self.assertEqual(
+                get_answer.await_args.kwargs["previous_response_id"],
+                "resp-profile",
+            )
+            service.generate_video.assert_awaited_once()
+            generated_options = service.generate_video.await_args.args[1]
+            self.assertEqual(generated_options.model, new_model)
+            self.assertEqual(generated_options.resolution, "720p")
+            self.assertEqual(generated_options.duration, 8)
+            self.assertEqual(
+                [image.content for image in service.generate_video.await_args.kwargs["reference_images"]],
+                [
+                    base64.b64decode(cast(str, _image(3)["image"])),
+                    base64.b64decode(cast(str, _image(1)["image"])),
+                ],
+            )
+            deliver.assert_awaited_once()
+            video.cleanup.assert_called_once_with()
 
 
 class ImageHandlerRoutingAndObservabilityTests(unittest.TestCase):
